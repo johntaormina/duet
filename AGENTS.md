@@ -51,3 +51,8 @@ Annotate code and tests with `@spec` comments citing EARS IDs:
 ```
 
 Place the annotation at the *entry point of the behavior's implementation graph* — the topmost function or module owning the specified behavior, not every helper. When a behavior spans multiple subsystems (UI + API + database, for example), annotate at the entry point in each subsystem. Tests follow the same rule: annotate the test that directly exercises the spec, not every inner assertion.
+
+## LID Tooling
+
+- **Coherence check**: `node scripts/coherence-check.mjs [PREFIX...]` — reports `@spec` annotations that name no spec, active specs with no test, and active specs with no code annotation (JSON Schemas carry theirs in `$comment`). Exits non-zero on dangling annotations or untested specs.
+- **Tests**: `npm test` (Vitest); **typecheck**: `npm run typecheck`.

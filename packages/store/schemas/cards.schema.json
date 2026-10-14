@@ -1,0 +1,393 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "duet:cards",
+  "title": "cards",
+  "$comment": "@spec ART-DECK-001, ART-DECK-002, ART-DECK-003, ART-DECK-004, ART-DECK-005, ART-DECK-006, ART-DECK-007, ART-DECK-008, ART-DECK-009, ART-DECK-011, ART-DECK-014, ART-DECK-015, ART-DECK-016, ART-DECK-017",
+  "definitions": {
+    "anchor": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "binary": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file",
+        "commit"
+      ],
+      "if": {
+        "not": {
+          "properties": {
+            "binary": {
+              "const": true
+            }
+          },
+          "required": [
+            "binary"
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "start_line",
+          "end_line"
+        ]
+      }
+    },
+    "card": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "trigger",
+            "proposed"
+          ]
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stakes": {
+          "enum": [
+            "high",
+            "low"
+          ]
+        },
+        "stakes_basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why_it_matters": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plain_technical": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metaphor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "analogy_breaks_down_when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pros": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reversibility": {
+                "type": "string",
+                "minLength": 1
+              },
+              "is_current": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "summary",
+              "pros",
+              "cons",
+              "reversibility",
+              "is_current"
+            ]
+          }
+        },
+        "alternative_and_consequence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/anchor"
+          }
+        },
+        "step_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "choice_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_examined": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "claim": {
+                "type": "string",
+                "minLength": 1
+              },
+              "note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "claim",
+              "note"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "order",
+        "fingerprint",
+        "source",
+        "stakes",
+        "stakes_basis",
+        "question",
+        "why_it_matters",
+        "plain_technical",
+        "options",
+        "anchors",
+        "step_ref",
+        "basis",
+        "not_examined",
+        "flags"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "trigger"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "categories"
+            ],
+            "properties": {
+              "categories": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "proposed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "alternative_and_consequence"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "metaphor"
+            ]
+          },
+          "then": {
+            "required": [
+              "analogy_breaks_down_when"
+            ]
+          }
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "recommendation"
+                ]
+              },
+              {
+                "required": [
+                  "recommended_option"
+                ]
+              },
+              {
+                "required": [
+                  "confidence"
+                ]
+              },
+              {
+                "required": [
+                  "reasoning"
+                ]
+              },
+              {
+                "required": [
+                  "what_would_change_my_mind"
+                ]
+              },
+              {
+                "required": [
+                  "related_findings"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/card"
+      }
+    },
+    "no_decisions_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "settled": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alternative": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fixed_by": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "decision",
+          "alternative",
+          "fixed_by"
+        ]
+      }
+    },
+    "fact_check": {
+      "enum": [
+        "complete",
+        "timed_out",
+        "failed"
+      ]
+    },
+    "proposed_status": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "failed"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "note"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "cards",
+    "no_decisions_summary",
+    "settled",
+    "fact_check",
+    "proposed_status"
+  ]
+}

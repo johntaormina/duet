@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "duet:context-pack",
+  "title": "context-pack",
+  "$comment": "@spec ART-CTX-001, ART-CTX-002, ART-CTX-003, ART-CTX-004",
+  "definitions": {
+    "anchor": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "binary": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file",
+        "commit"
+      ],
+      "if": {
+        "not": {
+          "properties": {
+            "binary": {
+              "const": true
+            }
+          },
+          "required": [
+            "binary"
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "start_line",
+          "end_line"
+        ]
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "budget": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "diff",
+              "author-statement",
+              "intent-source",
+              "commit-message",
+              "history",
+              "linked-doc",
+              "changed-file",
+              "file-outline",
+              "summarized-file",
+              "project-doc",
+              "codeowners",
+              "tool-output",
+              "caller"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "size",
+          "content"
+        ]
+      }
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "diff",
+              "author-statement",
+              "intent-source",
+              "commit-message",
+              "history",
+              "linked-doc",
+              "changed-file",
+              "file-outline",
+              "summarized-file",
+              "project-doc",
+              "codeowners",
+              "tool-output",
+              "caller"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "reason"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "budget",
+    "items",
+    "excluded"
+  ]
+}
