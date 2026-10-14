@@ -24,6 +24,15 @@ describe("calling the Claude CLI", () => {
     const args = cliArgs({ name: "p", prompt: "x", cwd: "/", tools: "none", timeoutMs: 1000 });
     expect(args).toContain("-p");
     expect(args.join(" ")).toMatch(/--output-format stream-json/);
+    expect(args).not.toContain("--strict-mcp-config");
+  });
+
+  // @spec PIPE-CALL-009
+  it("appends configured extra CLI arguments to every call", async () => {
+    expect(cliArgs({ name: "p", prompt: "", cwd: "/", tools: "none", timeoutMs: 1, extraArgs: ["--permission-mode", "dontAsk"] }).slice(-2)).toEqual(["--permission-mode", "dontAsk"]);
+    const { runner, calls } = fakeClaude({ p: () => ({ ok: true }) });
+    await callJson(env(runner, { config: { ...DEFAULT_CONFIG, claudeArgs: ["--foo"] } }), { prompt: "p", vars: { thing: "x" }, branch: "human" });
+    expect(calls[0].extraArgs).toEqual(["--foo"]);
   });
 
   // @spec PIPE-STG-004, PIPE-STG-005

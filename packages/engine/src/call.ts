@@ -42,7 +42,7 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * One logical Claude call: rate limits are waited out with exponential backoff; output that fails
  * parsing or the stage's checks is retried once with the problems listed, then rejected.
  */
-// @spec PIPE-CALL-003, PIPE-CALL-004, PIPE-CALL-005, PIPE-CALL-006
+// @spec PIPE-CALL-003, PIPE-CALL-004, PIPE-CALL-005, PIPE-CALL-006, PIPE-CALL-009
 export async function callJson<T>(env: CallEnv, spec: CallSpec<T>): Promise<CallResult<T>> {
   const prompt = loadPrompt(env.assets, spec.prompt, env.config);
   const base = render(prompt.body, spec.vars);
@@ -63,6 +63,7 @@ export async function callJson<T>(env: CallEnv, spec: CallSpec<T>): Promise<Call
             tools: prompt.settings.tools,
             maxTurns: prompt.settings.maxTurns,
             timeoutMs: prompt.settings.timeoutSec * 1000,
+            extraArgs: env.config.claudeArgs,
           }),
         );
         env.onWait?.(null);

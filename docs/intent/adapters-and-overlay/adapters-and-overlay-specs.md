@@ -25,7 +25,7 @@ Design: `adapters-and-overlay-design.md`. A "source" reads a change; a "sink" wr
 ## Configuration
 
 - [x] **ADPT-CFG-001**: Every package that reads configuration shall resolve each setting from, in increasing precedence, built-in defaults, the user configuration file, the repository configuration file, the overlay configuration, and command-line flags.
-- [x] **ADPT-CFG-002**: Configuration shall cover the run root directory, the model and budgets per stage, the concurrency cap, the findings confidence threshold, per-category default stakes, generated-file paths, caller resolvers, tool-output providers, the reviewer identity, the default source, and the overlay location.
+- [x] **ADPT-CFG-002**: Configuration shall cover the run root directory, the model and budgets per stage, the concurrency cap, the findings confidence threshold, per-category default stakes, generated-file paths, caller resolvers, tool-output providers, extra Claude CLI arguments, the reviewer identity, the default source, and the overlay location.
 
 ## Overlay
 

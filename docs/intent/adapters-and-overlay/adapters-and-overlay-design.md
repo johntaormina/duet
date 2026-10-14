@@ -32,7 +32,7 @@ The tool never posts a review approval or a request for changes. It posts commen
 
 ## Configuration
 
-Settings come from, in increasing precedence: built-in defaults, a user configuration file, a repository configuration file, the overlay, and command-line flags. Settings cover the run root directory, the model and budgets per stage, the concurrency cap, the confidence threshold for findings, per-category default stakes for the repository, generated-file paths, caller resolvers and tool-output providers, the reviewer identity override, the default source, and the overlay location.
+Settings come from, in increasing precedence: built-in defaults, a user configuration file, a repository configuration file, the overlay, and command-line flags. Settings cover the run root directory, the model and budgets per stage, the concurrency cap, the confidence threshold for findings, per-category default stakes for the repository, generated-file paths, caller resolvers and tool-output providers, extra arguments for every Claude CLI call, the reviewer identity override, the default source, and the overlay location.
 
 ## Overlay
 

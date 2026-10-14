@@ -75,6 +75,7 @@ Design: `pipeline-design.md`. "The engine" is the pipeline program. "Human-layer
 - [x] **PIPE-CALL-006**: While a stage is waiting on a rate limit, the engine shall keep the stage `running` and set its `detail` to say it is waiting on a rate limit and until when.
 - [x] **PIPE-CALL-007**: Within one `run`, the engine shall run no more Claude CLI calls at once than the configured concurrency cap, defaulting to 3; `ask` calls are not counted against it.
 - [x] **PIPE-CALL-008**: When calls from both branches are waiting for a free slot under the concurrency cap, the engine shall start human-layer calls first.
+- [x] **PIPE-CALL-009**: The engine shall append the configured extra Claude CLI arguments to every Claude CLI call.
 
 ## Failure
 

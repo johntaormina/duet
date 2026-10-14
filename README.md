@@ -75,6 +75,7 @@ Settings are read in this order, each overriding the last: built-in defaults, `~
 | `generatedPaths` | `[]` | Extra glob patterns for generated files to summarize instead of review |
 | `stages` | `{}` | Per-prompt overrides, e.g. `{"briefing": {"model": "opus", "timeoutSec": 300}}` |
 | `overlay` | `null` | Path to an overlay directory |
+| `claudeArgs` | `[]` | Extra arguments added to every `claude` call, for environments that need them |
 
 ### Overlays
 

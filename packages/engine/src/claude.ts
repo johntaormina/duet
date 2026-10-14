@@ -11,6 +11,8 @@ export interface ClaudeRequest {
   tools: ToolSet;
   maxTurns?: number;
   timeoutMs: number;
+  /** Extra arguments from configuration, appended to every call. */
+  extraArgs?: string[];
 }
 
 export interface ClaudeResponse {
@@ -39,10 +41,11 @@ const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 const RATE_LIMIT = /rate.?limit|usage limit|too many requests|\b429\b|overloaded/i;
 
 export function cliArgs(req: ClaudeRequest): string[] {
-  const args = ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config"];
+  const args = ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"];
   if (req.model) args.push("--model", req.model);
   args.push("--tools", req.tools === "none" ? "" : READ_ONLY_TOOLS.join(","));
   if (req.maxTurns) args.push("--max-turns", String(req.maxTurns));
+  args.push(...(req.extraArgs ?? []));
   return args;
 }
 

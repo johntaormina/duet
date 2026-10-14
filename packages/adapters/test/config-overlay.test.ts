@@ -29,7 +29,7 @@ describe("configuration", () => {
   // @spec ADPT-CFG-002
   it("covers every setting the design lists", () => {
     for (const key of ["root", "stages", "concurrency", "confidenceThreshold", "stakes", "generatedPaths", "resolvers",
-      "toolOutput", "reviewer", "defaultSource", "overlay"]) {
+      "toolOutput", "reviewer", "defaultSource", "overlay", "claudeArgs"]) {
       expect(DEFAULT_CONFIG, key).toHaveProperty(key);
     }
     expect(DEFAULT_CONFIG.concurrency).toBe(3);

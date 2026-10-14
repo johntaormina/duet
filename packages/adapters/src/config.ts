@@ -27,6 +27,8 @@ export interface DuetConfig {
   defaultSource: "git" | "gh" | string;
   overlay: string | null;
   rateLimitCeilingSec: number;
+  /** Extra arguments passed to every Claude CLI call, for environments that need them. */
+  claudeArgs: string[];
 }
 
 export const DEFAULT_CONFIG: DuetConfig = {
@@ -47,6 +49,7 @@ export const DEFAULT_CONFIG: DuetConfig = {
   defaultSource: "git",
   overlay: null,
   rateLimitCeilingSec: 600,
+  claudeArgs: [],
 };
 
 function readConfigFile(dir: string, base: string): Partial<DuetConfig> {

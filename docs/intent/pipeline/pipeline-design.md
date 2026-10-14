@@ -80,7 +80,7 @@ Each finding names the cards it bears on. If the cards stage failed, findings ca
 
 ## Calling the CLI
 
-Every call passes a prompt assembled from a prompt file and the stage's inputs, requests JSON output, and restricts tools to the stage's list. The model, turn limit, and timeout come from the prompt file's frontmatter, overridable by configuration. Output is validated through the artifact store.
+Every call passes a prompt assembled from a prompt file and the stage's inputs, requests JSON output, and restricts tools to the stage's list. It passes no other flags by default, because managed environments restrict some (for example, an organization that defines its own MCP servers rejects options that replace them); arguments an environment does need come from the `claudeArgs` setting and are appended to every call. The model, turn limit, and timeout come from the prompt file's frontmatter, overridable by configuration. Output is validated through the artifact store.
 
 - **Obvious omissions.** Before validation, the engine repairs omissions that have exactly one sensible fix (for example, a `stated` rationale missing its `text` takes the quote), so a formatting slip does not cost a retry.
 - **Invalid output.** The engine validates each call's output before handing it to the artifact store. Each call gets one retry in total, whatever made the output unacceptable (schema errors or a stage's own checks, such as card coverage), with the problems listed in the retry prompt. A second unacceptable result fails the stage; nothing invalid is written.
