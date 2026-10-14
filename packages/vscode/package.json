@@ -1,0 +1,118 @@
+{
+  "name": "duet",
+  "displayName": "Duet",
+  "description": "Two-layer code review: understand a change, own its decisions, and let Claude hunt the bugs.",
+  "version": "0.1.0",
+  "publisher": "duet-local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "duet.startReview",
+        "title": "Start review",
+        "category": "Duet"
+      },
+      {
+        "command": "duet.openReview",
+        "title": "Open review",
+        "category": "Duet"
+      },
+      {
+        "command": "duet.postDecisionLog",
+        "title": "Post decision log",
+        "category": "Duet"
+      },
+      {
+        "command": "duet.finding.dismissed",
+        "title": "Dismiss",
+        "category": "Duet"
+      },
+      {
+        "command": "duet.finding.fixed",
+        "title": "Mark fixed",
+        "category": "Duet"
+      },
+      {
+        "command": "duet.finding.open",
+        "title": "Reopen",
+        "category": "Duet"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "duet",
+          "title": "Duet",
+          "icon": "media/duet.svg"
+        }
+      ]
+    },
+    "views": {
+      "duet": [
+        {
+          "id": "duet.findings",
+          "name": "Findings"
+        }
+      ]
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "duet.finding.dismissed",
+          "when": "view == duet.findings && viewItem =~ /finding-.*dismissed/",
+          "group": "inline"
+        },
+        {
+          "command": "duet.finding.fixed",
+          "when": "view == duet.findings && viewItem =~ /finding-.*fixed/",
+          "group": "inline"
+        },
+        {
+          "command": "duet.finding.open",
+          "when": "view == duet.findings && viewItem == finding-open"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "duet.finding.dismissed",
+          "when": "false"
+        },
+        {
+          "command": "duet.finding.fixed",
+          "when": "false"
+        },
+        {
+          "command": "duet.finding.open",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Duet",
+      "properties": {
+        "duet.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Node.js executable used to run Duet's engine."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@duet/adapters": "0.1.0",
+    "@duet/session": "0.1.0",
+    "@duet/store": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/REPLACE-ME/duet"
+  }
+}

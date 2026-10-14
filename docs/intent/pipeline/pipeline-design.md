@@ -19,6 +19,8 @@ The engine exposes the `duet` command with three operations:
 - **ask**: answer a reviewer's question about one card in an existing run (see *Questions*).
 - **clean**: remove run directories, their head worktrees, and their snapshot refs, for runs older than a given age or named explicitly.
 
+As soon as `run` has created or found its run, it announces the run id on standard error, so an interface can open the review and show stages filling in while the engine works.
+
 The VS Code extension and the review session call these operations; the engine never depends on them.
 
 ## Code at the Head Commit
@@ -80,6 +82,7 @@ Each finding names the cards it bears on. If the cards stage failed, findings ca
 
 Every call passes a prompt assembled from a prompt file and the stage's inputs, requests JSON output, and restricts tools to the stage's list. The model, turn limit, and timeout come from the prompt file's frontmatter, overridable by configuration. Output is validated through the artifact store.
 
+- **Obvious omissions.** Before validation, the engine repairs omissions that have exactly one sensible fix (for example, a `stated` rationale missing its `text` takes the quote), so a formatting slip does not cost a retry.
 - **Invalid output.** The engine validates each call's output before handing it to the artifact store. Each call gets one retry in total, whatever made the output unacceptable (schema errors or a stage's own checks, such as card coverage), with the problems listed in the retry prompt. A second unacceptable result fails the stage; nothing invalid is written.
 - **Rate limits.** When the CLI reports a rate limit, the engine waits with exponential backoff up to a configured ceiling and retries. While waiting, the stage stays `running` and its entry says it is waiting on a rate limit and until when.
 - **Concurrency.** At most a configured number of CLI calls run at once in one `run` (default 3), across both branches, with human-layer calls served first. `ask` calls are outside this cap.

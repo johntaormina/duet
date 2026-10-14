@@ -59,6 +59,8 @@ export interface RunOptions extends EngineDeps {
   authorStatement?: string;
   agentPlanFile?: string;
   flags?: Partial<DuetConfig>;
+  /** Called as soon as the run exists, before any stage runs. */
+  onRun?: (runId: string, runDir: string) => void;
 }
 
 export interface RunSummary {
@@ -141,6 +143,7 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
   try {
     if (change.worktree) s.store.keepSnapshot(runId, change.head);
     pipeline.initRun({ base: change.base, head: change.head, title: change.title });
+    opts.onRun?.(runId, pipeline.dir);
     const worktree = ensureHeadWorktree(opts.repoRoot, pipeline.dir, change.head);
     const reader = () => s.store.reader(runId);
     const scheduler = new Scheduler(s.config.concurrency);

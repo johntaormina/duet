@@ -41,7 +41,7 @@ export async function main(argv: string[], out = process.stdout, err = process.s
         return 2;
       }
       const statement = str(flags.statement) ?? (flags["statement-file"] ? readFileSync(str(flags["statement-file"])!, "utf8") : undefined);
-      const summary = await run({ repoRoot, change, authorStatement: statement, agentPlanFile: str(flags.plan) });
+      const summary = await run({ repoRoot, change, authorStatement: statement, agentPlanFile: str(flags.plan), onRun: (id, dir) => err.write(`duet-run ${id} ${dir}\n`) });
       out.write(`${JSON.stringify(summary)}\n`);
       return Object.values(summary.stages).every((s) => s === "complete") ? 0 : 1;
     }

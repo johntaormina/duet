@@ -1,18 +1,38 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Ajv, type ValidateFunction } from "ajv";
+import briefingSchema from "../schemas/briefing.schema.json" with { type: "json" };
+import cardsSchema from "../schemas/cards.schema.json" with { type: "json" };
+import contextPackSchema from "../schemas/context-pack.schema.json" with { type: "json" };
+import findingStateSchema from "../schemas/finding-state.schema.json" with { type: "json" };
+import findingsSchema from "../schemas/findings.schema.json" with { type: "json" };
+import intentSchema from "../schemas/intent.schema.json" with { type: "json" };
+import qaEntrySchema from "../schemas/qa-entry.schema.json" with { type: "json" };
+import recommendationsSchema from "../schemas/recommendations.schema.json" with { type: "json" };
+import recordSchema from "../schemas/record.schema.json" with { type: "json" };
+import runSchema from "../schemas/run.schema.json" with { type: "json" };
 import { countWords } from "./hash.ts";
 import type { Briefing, Cards, SchemaName } from "./types.ts";
 
-const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas");
+/** Schemas are imported, not read from disk, so they travel inside any bundle. */
+const SCHEMAS: Record<SchemaName, object> = {
+  run: runSchema,
+  "context-pack": contextPackSchema,
+  intent: intentSchema,
+  briefing: briefingSchema,
+  cards: cardsSchema,
+  recommendations: recommendationsSchema,
+  findings: findingsSchema,
+  record: recordSchema,
+  "finding-state": findingStateSchema,
+  "qa-entry": qaEntrySchema,
+};
+
 const ajv = new Ajv({ allErrors: true, strict: false });
 const compiled = new Map<SchemaName, ValidateFunction>();
 
 function validator(name: SchemaName): ValidateFunction {
   let v = compiled.get(name);
   if (!v) {
-    v = ajv.compile(JSON.parse(readFileSync(join(SCHEMA_DIR, `${name}.schema.json`), "utf8")));
+    v = ajv.compile(SCHEMAS[name]);
     compiled.set(name, v);
   }
   return v;

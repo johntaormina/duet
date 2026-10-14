@@ -19,7 +19,13 @@ Produce:
 
 An anchor is `{"file": "path", "start_line": n, "end_line": m}` (head line numbers), optionally with `"pattern"`; for a binary file use `{"file": "path", "binary": true}`.
 
-Return only JSON with the keys effort, coverage, cohorts, steps, choices.
+Every rationale has a `text`, whatever its source. The shapes are:
+- `{"source": "stated", "text": "why, in your words", "quote": "exact words from the item", "item": "i3"}`
+- `{"source": "inferred", "text": "your reconstruction, labelled as such"}`
+- `{"source": "none", "text": "what is unknown"}`
+
+Return only JSON:
+{"effort": {"score": 3, "minutes": 20, "drivers": ["..."]}, "coverage": {"reviewed": ["..."], "skipped": [{"path": "...", "reason": "..."}]}, "cohorts": [{"id": "C1", "title": "...", "summary": "...", "files": ["..."], "depends_on": []}], "steps": [{"id": "S1", "title": "...", "explanation": "...", "anchors": [...]}], "choices": [{"id": "H1", "kind": "approach", "choice": "...", "alternative": "...", "tradeoff": "...", "rationale": {...}, "anchors": [...], "step_ref": "S1"}]}
 
 # What the change claims and does
 {{intent}}

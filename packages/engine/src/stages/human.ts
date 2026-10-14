@@ -40,6 +40,14 @@ export function checkStatedQuotes(b: Pick<Briefing, "choices">, pack: ContextPac
   return problems;
 }
 
+/** Repairs omissions with one obvious fix, so a missing field does not cost a retry. */
+function normalizeBriefing<T extends { choices?: { rationale?: { source?: string; text?: string; quote?: string } }[] }>(out: T): T {
+  for (const c of out.choices ?? []) {
+    if (c.rationale && typeof c.rationale.text !== "string") c.rationale.text = c.rationale.quote ?? "";
+  }
+  return out;
+}
+
 // @spec PIPE-STG-006, PIPE-STG-007
 export async function runBriefing(env: CallEnv, pack: ContextPack, intent: Intent, head: string): Promise<Briefing> {
   const { value } = await callJson<Omit<Briefing, "schema_version">>(env, {
@@ -47,12 +55,12 @@ export async function runBriefing(env: CallEnv, pack: ContextPack, intent: Inten
     branch: "human",
     vars: { context: renderPack(pack), intent: renderIntent(intent) },
     check: (out) => {
-      const full = withAnchorsAtHead({ schema_version: SCHEMA_VERSION, ...out }, head);
+      const full = withAnchorsAtHead({ schema_version: SCHEMA_VERSION, ...normalizeBriefing(out) }, head);
       const v = validate("briefing", full);
       return v.ok ? checkStatedQuotes(full, pack) : v.errors;
     },
   });
-  return withAnchorsAtHead({ schema_version: SCHEMA_VERSION, ...value }, head);
+  return withAnchorsAtHead({ schema_version: SCHEMA_VERSION, ...normalizeBriefing(value) }, head);
 }
 
 export { withAnchorsAtHead };
