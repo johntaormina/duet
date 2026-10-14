@@ -27,14 +27,13 @@ Run `npm run build` again after pulling changes.
 
 ### VS Code extension
 
-The build writes `packages/vscode/` with the extension bundled. Package it and install the result:
+Package the extension and install the result:
 
 ```sh
-cd packages/vscode
-npx @vscode/vsce package --no-dependencies --skip-license
+npm run package        # writes packages/vscode/duet-<version>.vsix
 ```
 
-In VS Code, open Extensions, choose **…** → **Install from VSIX…**, and pick `duet-<version>.vsix`. With a terminal where `code` is on your PATH you can instead run `code --install-extension duet-<version>.vsix`.
+In VS Code, open Extensions, choose **…** → **Install from VSIX…**, and pick `packages/vscode/duet-<version>.vsix`. With a terminal where `code` is on your PATH you can instead run `code --install-extension duet-<version>.vsix`.
 
 The extension runs Duet's engine with `node` from your PATH. Set `duet.nodePath` if you need another one.
 
