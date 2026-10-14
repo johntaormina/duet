@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "package": "npm run build && cd packages/vscode && npx --yes @vscode/vsce@3 package --no-dependencies --skip-license"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
