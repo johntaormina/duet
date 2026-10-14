@@ -1,0 +1,11 @@
+{
+  "name": "@duet/session",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@duet/adapters": "0.1.0",
+    "@duet/store": "0.1.0"
+  }
+}
