@@ -3,6 +3,7 @@
   "displayName": "Duet",
   "description": "Two-layer code review: understand a change, own its decisions, and let Claude hunt the bugs.",
   "version": "0.1.0",
+  "license": "MIT",
   "publisher": "duet-local",
   "private": true,
   "engines": {

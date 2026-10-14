@@ -118,3 +118,7 @@ The design lives in `docs/`: the high-level design in `docs/high-level-design.md
 | `packages/engine` | The `duet` command: context pack, stages, prompts |
 | `packages/session` | One reviewer's session: blind-first, answers, the decision log |
 | `packages/vscode` | The VS Code extension |
+
+## License
+
+MIT. See [LICENSE](LICENSE).

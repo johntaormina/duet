@@ -1,6 +1,7 @@
 {
   "name": "duet",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -9,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "node scripts/build.mjs",
-    "package": "npm run build && cd packages/vscode && npx --yes @vscode/vsce@3 package --no-dependencies --skip-license"
+    "package": "npm run build && cd packages/vscode && npx --yes @vscode/vsce@3 package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

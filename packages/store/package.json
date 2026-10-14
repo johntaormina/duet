@@ -1,9 +1,12 @@
 {
   "name": "@duet/store",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "ajv": "^8.17.1"
   }
