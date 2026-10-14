@@ -26,10 +26,10 @@ for (const f of walk(join(root, "docs/intent")).filter((f) => f.endsWith("-specs
 
 const cited = { test: new Set(), code: new Set() };
 const dangling = [];
-for (const f of walk(join(root, "packages")).filter((f) => /\.(ts|js|mjs|json)$/.test(f))) {
+for (const f of walk(join(root, "packages")).filter((f) => /\.(ts|js|mjs|json|md)$/.test(f))) {
   const kind = /[\\/]test[\\/]/.test(f) ? "test" : "code";
   for (const m of readFileSync(f, "utf8").matchAll(/@spec ([A-Z0-9, -]+)/g)) {
-    for (const id of m[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+    for (const id of m[1].split(",").map((s) => s.trim().replace(/\s*-+$/, "")).filter((s) => /^[A-Z]+(?:-[A-Z]+)*-\d{3}$/.test(s))) {
       if (!specs.has(id)) dangling.push(`${relative(root, f)}: ${id}`);
       cited[kind].add(id);
     }

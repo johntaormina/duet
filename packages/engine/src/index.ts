@@ -1,0 +1,17 @@
+export { acquireLock, ask, clean, CORE_ASSETS, LockHeldError, run } from "./engine.ts";
+export type { AskOptions, CleanOptions, EngineDeps, RunOptions, RunSummary } from "./engine.ts";
+export { CallTimeoutError, cliArgs, cliRunner, extractJson, RateLimitError } from "./claude.ts";
+export type { ClaudeRequest, ClaudeResponse, ClaudeRunner, ToolSet } from "./claude.ts";
+export { callJson, InvalidOutputError } from "./call.ts";
+export type { CallEnv } from "./call.ts";
+export { Scheduler } from "./scheduler.ts";
+export { loadPrompt } from "./prompts.ts";
+export { buildContextPack, ChangeTooLargeError } from "./context/pack.ts";
+export { classify, collapseMechanical, stripNotebook, summarizeLockfile } from "./context/normalize.ts";
+export { applyFactCheck, assembleDeck, cardFingerprint, runCards, uncoveredHits } from "./stages/cards.ts";
+export type { DraftCard } from "./stages/cards.ts";
+export { defaultStakes, intentHits, loadTriggers, signalHits } from "./stages/triggers.ts";
+export { checkStatedQuotes, runBriefing, runIntent } from "./stages/human.ts";
+export { mergeFindings, runMachine, runRecommendations } from "./stages/machine.ts";
+export { ensureHeadWorktree, removeHeadWorktree } from "./worktree.ts";
+export { main } from "./cli.ts";

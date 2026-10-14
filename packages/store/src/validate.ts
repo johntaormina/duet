@@ -29,6 +29,7 @@ export interface ValidationResult {
 }
 
 /** Word limits on card text, enforced here because a schema cannot count words. */
+// @spec CARD-WRITE-002, CARD-WRITE-003, CARD-WRITE-004, CARD-WRITE-005
 export const CARD_WORD_LIMITS = { question: 30, why_it_matters: 60, plain_technical: 60, option_summary: 25 };
 
 /**

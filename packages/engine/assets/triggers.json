@@ -1,0 +1,150 @@
+{
+  "$comment": "@spec CARD-TRIG-002",
+  "categories": [
+    {
+      "category": "auth",
+      "stakes": "high",
+      "description": "Authentication and authorization logic",
+      "signals": {
+        "paths": [
+          "**/auth/**",
+          "**/authz/**",
+          "**/*permission*",
+          "**/*rbac*",
+          "**/*oauth*"
+        ]
+      }
+    },
+    {
+      "category": "secrets",
+      "stakes": "high",
+      "description": "Handling, storage, or transmission of credentials and keys, including third-party CI actions that can reach them",
+      "signals": {
+        "paths": [
+          "**/*.pem",
+          "**/*.key",
+          "**/.env*",
+          "**/secrets/**",
+          "**/*secret*"
+        ]
+      }
+    },
+    {
+      "category": "money",
+      "stakes": "high",
+      "description": "Billing, payments, pricing",
+      "signals": {
+        "paths": [
+          "**/billing/**",
+          "**/payment*/**",
+          "**/pricing/**",
+          "**/invoice*/**"
+        ]
+      }
+    },
+    {
+      "category": "data-model",
+      "stakes": "high",
+      "description": "Schemas, migrations, persisted or exchanged data formats",
+      "signals": {
+        "paths": [
+          "**/migrations/**",
+          "**/migrate/**",
+          "**/*.sql",
+          "**/schema.prisma",
+          "**/*.proto",
+          "**/*.avsc",
+          "**/schema/**"
+        ]
+      }
+    },
+    {
+      "category": "data-semantics",
+      "stakes": "high",
+      "description": "Meaning of data: units, null and duplicate handling, join cardinality, metric definitions, feature preprocessing, model and evaluation settings"
+    },
+    {
+      "category": "irreversible",
+      "stakes": "high",
+      "description": "Deletes, sends to external systems, other one-way operations"
+    },
+    {
+      "category": "public-interface",
+      "stakes": "high",
+      "description": "Exported APIs, endpoints, command-line flags, configuration formats others depend on",
+      "signals": {
+        "paths": [
+          "**/openapi*.{yaml,yml,json}",
+          "**/api/**/*.proto"
+        ]
+      }
+    },
+    {
+      "category": "compat-rollout",
+      "stakes": "high",
+      "description": "Compatibility with deployed clients and versions, deployment and migration order, feature flags, semantic-version level"
+    },
+    {
+      "category": "concurrency",
+      "stakes": "high",
+      "description": "Locking, ordering of asynchronous work, shared mutable state"
+    },
+    {
+      "category": "error-semantics",
+      "stakes": "high",
+      "description": "Swallowed errors, retries, idempotency of reruns and backfills"
+    },
+    {
+      "category": "privacy",
+      "stakes": "high",
+      "description": "Personal data in logs, storage, or transmission; retention; device permissions"
+    },
+    {
+      "category": "intent-contradiction",
+      "stakes": "high",
+      "description": "Code that does the opposite of, or something incompatible with, what the stated intent says"
+    },
+    {
+      "category": "intent-unstated",
+      "stakes": "high",
+      "description": "Code that does things the stated intent does not mention"
+    },
+    {
+      "category": "intent-unknown",
+      "stakes": "high",
+      "description": "No usable statement of intent exists for the change"
+    },
+    {
+      "category": "new-dependency",
+      "stakes": "low",
+      "description": "A dependency added, upgraded by a major version, or taken from a new source; a container base image changed"
+    },
+    {
+      "category": "infra-ci",
+      "stakes": "low",
+      "description": "Build, deployment, and CI configuration",
+      "signals": {
+        "paths": [
+          ".github/workflows/**",
+          "**/Dockerfile*",
+          "**/*.tf",
+          "**/k8s/**",
+          "**/helm/**",
+          "**/Jenkinsfile",
+          ".gitlab-ci.yml",
+          "**/.circleci/**"
+        ]
+      }
+    },
+    {
+      "category": "cost-performance",
+      "stakes": "low",
+      "description": "Instance sizes, scaling, query scan size, batch sizes"
+    },
+    {
+      "category": "observability",
+      "stakes": "low",
+      "description": "Alerts, metrics, and logs added, removed, or changed"
+    }
+  ]
+}
