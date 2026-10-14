@@ -15,7 +15,7 @@ Writing back is the one outward-facing, irreversible act the tool performs. It i
 
 A source turns a reference to a change into what the pipeline needs: base and head commits (for a pull request, the base is the merge-base of the pull request's head and its target branch, so unrelated changes on the target are not part of the review), a title, a description, the text of linked issues, and existing review comments. Two sources ship with the core:
 
-- **git**: a base and head ref, or the working tree against a base. No description or comments; the intent sources are empty unless the reviewer supplies a description.
+- **git**: a base and head ref, or the working tree against a base. As with pull requests, the base commit is the merge-base, so commits that landed on the base branch after the change branched off are not part of the review. No description or comments; the intent sources are empty unless the reviewer supplies a description.
 - **gh**: a pull request number on GitHub, read with the `gh` command-line tool. The source fetches the pull request's base and head commits into the local repository when they are missing, without changing the checked-out branch.
 
 An overlay may add sources, for example one that reaches the code host through an MCP server by calling the Claude CLI with that server enabled. Sources are read-only.
