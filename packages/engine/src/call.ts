@@ -14,7 +14,7 @@ export interface CallEnv {
   runner: ClaudeRunner;
   assets: AssetResolver;
   config: DuetConfig;
-  scheduler: { run<T>(branch: Branch, fn: () => Promise<T>): Promise<T> };
+  scheduler: { run<T>(branch: Branch, fn: () => Promise<T>): Promise<T>; throttle?(): void };
   /** Head worktree every call runs in. */
   cwd: string;
   sleep?: (ms: number) => Promise<void>;
@@ -46,7 +46,7 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * One logical Claude call: rate limits are waited out with exponential backoff; output that fails
  * parsing or the stage's checks is retried once with the problems listed, then rejected.
  */
-// @spec PIPE-CALL-003, PIPE-CALL-004, PIPE-CALL-005, PIPE-CALL-006, PIPE-CALL-011, PIPE-CALL-009, PIPE-PROG-001, PIPE-PROG-002, PIPE-PROG-003
+// @spec PIPE-CALL-003, PIPE-CALL-004, PIPE-CALL-005, PIPE-CALL-006, PIPE-CALL-011, PIPE-CALL-013, PIPE-CALL-009, PIPE-PROG-001, PIPE-PROG-002, PIPE-PROG-003
 export async function callJson<T>(env: CallEnv, spec: CallSpec<T>): Promise<CallResult<T>> {
   const prompt = loadPrompt(env.assets, spec.prompt, env.config);
   const base = render(prompt.body, spec.vars);
@@ -76,6 +76,7 @@ export async function callJson<T>(env: CallEnv, spec: CallSpec<T>): Promise<Call
               extraArgs: env.config.claudeArgs,
               // @spec PIPE-CALL-011
               onRateLimitRetry: (delay) => {
+                env.scheduler.throttle?.();
                 const until = new Date(now().getTime() + delay).toISOString().slice(11, 19);
                 env.onWait?.(`waiting on a rate limit until ${until} UTC`);
                 report(`rate limited; claude retries at ${until} UTC`);
@@ -101,6 +102,7 @@ export async function callJson<T>(env: CallEnv, spec: CallSpec<T>): Promise<Call
         break;
       } catch (e) {
         if (!(e instanceof RateLimitError)) throw e;
+        env.scheduler.throttle?.();
         const ceiling = env.config.rateLimitCeilingSec * 1000;
         const wait = Math.min(e.retryAfterMs ?? backoff, ceiling);
         const until = new Date(now().getTime() + wait);

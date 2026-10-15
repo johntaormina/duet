@@ -6,7 +6,13 @@ export class Scheduler {
   private active = 0;
   private queue: { branch: Branch; start: () => void }[] = [];
 
-  constructor(readonly cap: number) {}
+  constructor(public cap: number) {}
+
+  /** After a rate limit: start one call at a time from now on; calls already running finish. */
+  // @spec PIPE-CALL-013
+  throttle(): void {
+    this.cap = 1;
+  }
 
   async run<T>(branch: Branch, fn: () => Promise<T>): Promise<T> {
     await new Promise<void>((start) => {
@@ -32,4 +38,4 @@ export class Scheduler {
 }
 
 /** An unlimited scheduler, for calls that are not counted against the cap. */
-export const unlimited = { run: <T>(_b: Branch, fn: () => Promise<T>) => fn() };
+export const unlimited = { run: <T>(_b: Branch, fn: () => Promise<T>) => fn(), throttle: () => {} };

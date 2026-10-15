@@ -370,8 +370,10 @@ describe("starting and opening reviews", () => {
     const s = setup();
     const changed: string[] = [];
     const w = watchRun(s.store.runDir("r1"), (f) => changed.push(f), 20);
+    // File watchers can miss a write made the instant they start; give it a moment, then wait for the event.
+    await new Promise((r) => setTimeout(r, 100));
     s.p.setStage("findings", { status: "complete" });
-    await new Promise((r) => setTimeout(r, 200));
+    for (let waited = 0; !changed.includes("run.json") && waited < 3000; waited += 50) await new Promise((r) => setTimeout(r, 50));
     w.close();
     expect(changed).toContain("run.json");
   });

@@ -77,6 +77,8 @@ Design: `pipeline-design.md`. "The engine" is the pipeline program. "Human-layer
 - [x] **PIPE-CALL-006**: While a stage is waiting on a rate limit, the engine shall keep the stage `running` and set its `detail` to say it is waiting on a rate limit and until when.
 - [x] **PIPE-CALL-010**: When the Claude CLI reports during a call that it is retrying a request rejected for a rate limit or overload, the engine shall extend that call's timeout by the reported retry delay.
 - [x] **PIPE-CALL-011**: When the Claude CLI reports during a call that it is retrying a request rejected for a rate limit or overload, the engine shall treat the stage as waiting on a rate limit until the reported retry time.
+- [x] **PIPE-CALL-012**: The engine shall treat a Claude CLI error or retry as a rate limit when it reports HTTP status 429 or 529, or its message mentions a rate limit, a usage limit, too many requests, too many tokens, throttling, or an overload.
+- [x] **PIPE-CALL-013**: When any Claude call during a `run` meets a rate limit, the engine shall start no more than one Claude CLI call at a time for the rest of that `run`, letting calls already running finish.
 - [x] **PIPE-CALL-007**: Within one `run`, the engine shall run no more Claude CLI calls at once than the configured concurrency cap, defaulting to 3; `ask` calls are not counted against it.
 - [x] **PIPE-CALL-008**: When calls from both branches are waiting for a free slot under the concurrency cap, the engine shall start human-layer calls first.
 - [x] **PIPE-CALL-009**: The engine shall append the configured extra Claude CLI arguments to every Claude CLI call.

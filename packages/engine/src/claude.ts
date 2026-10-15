@@ -40,7 +40,8 @@ export class CallTimeoutError extends Error {
 }
 
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
-const RATE_LIMIT = /rate.?limit|usage limit|too many requests|\b429\b|overloaded/i;
+// @spec PIPE-CALL-012
+const RATE_LIMIT = /rate.?limit|usage limit|too many (requests|tokens)|throttl|\b429\b|\b529\b|overload/i;
 
 export function cliArgs(req: ClaudeRequest): string[] {
   const args = ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence"];
@@ -52,7 +53,7 @@ export function cliArgs(req: ClaudeRequest): string[] {
 }
 
 /** True for a CLI `api_retry` event caused by a rate limit or overload, which the CLI waits out itself. */
-const isRateLimitRetry = (ev: { error_status?: number; error?: string }) => ev.error_status === 429 || ev.error_status === 529 || /rate.?limit|overload/i.test(ev.error ?? "");
+const isRateLimitRetry = (ev: { error_status?: number; error?: string }) => ev.error_status === 429 || ev.error_status === 529 || RATE_LIMIT.test(ev.error ?? "");
 
 /**
  * Invokes the Claude CLI in headless mode, streaming JSON events so partial output survives a timeout.

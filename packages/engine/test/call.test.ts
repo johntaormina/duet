@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssetResolver, DEFAULT_CONFIG } from "@duet/adapters";
 import { describe, expect, it } from "vitest";
-import { callJson, cliArgs, cliRunner, extractJson, InvalidOutputError, loadPrompt, RateLimitError, Scheduler } from "../src/index.ts";
+import { callJson, cliArgs, cliRunner, type ClaudeRequest, extractJson, InvalidOutputError, loadPrompt, RateLimitError, Scheduler } from "../src/index.ts";
 import { CORE_ASSETS } from "../src/engine.ts";
 import { fakeClaude, noSleep } from "./kit.ts";
 
@@ -179,13 +179,13 @@ describe("rate limits inside a CLI call", () => {
 
   // @spec PIPE-CALL-010
   it("does not count the CLI's rate-limit retry delays toward the call's timeout", async () => {
-    const res = await withFakeCli([retry(429, 600), 700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 400 }));
+    const res = await withFakeCli([retry(429, 1500), 1700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 1000 }));
     expect(res).toEqual({ text: '{"ok":true}', truncated: false });
   });
 
   // @spec PIPE-CALL-010
   it("still times out a call that is slow for reasons other than rate limits", async () => {
-    const slow = withFakeCli([JSON.stringify({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 600, error_status: 500, error: "server_error" }), 700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 400 }));
+    const slow = withFakeCli([JSON.stringify({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 1500, error_status: 500, error: "server_error" }), 1700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 1000 }));
     await expect(slow).rejects.toThrow(/timed out/);
   });
 
@@ -199,5 +199,57 @@ describe("rate limits inside a CLI call", () => {
     expect(waits[0]).toBe("waiting on a rate limit until 12:00:00 UTC");
     expect(waits.at(-1)).toBeNull();
     expect(lines.some((l) => /rate limited; claude retries at 12:00:00 UTC/.test(l))).toBe(true);
+  });
+});
+
+describe("after a rate limit", () => {
+  // @spec PIPE-CALL-012
+  it("recognizes Bedrock's and other providers' rate-limit wording", async () => {
+    for (const msg of ["ThrottlingException: Too many tokens, please wait before trying again.", "Too many requests", "API Error: 529 Overloaded", "Rate limit reached", "usage limit"]) {
+      const out = JSON.stringify({ type: "result", subtype: "success", is_error: true, result: msg });
+      await expect(withFakeCli([out], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 5000 })), msg).rejects.toBeInstanceOf(RateLimitError);
+    }
+    const other = JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Invalid model id" });
+    await expect(withFakeCli([other], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 5000 }))).rejects.not.toBeInstanceOf(RateLimitError);
+    const throttled = JSON.stringify({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 1500, error: "ThrottlingException" });
+    const ok = JSON.stringify({ type: "result", subtype: "success", is_error: false, result: '{"ok":true}' });
+    await expect(withFakeCli([throttled, 1700, ok], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 1000 }))).resolves.toMatchObject({ truncated: false });
+  });
+
+  // @spec PIPE-CALL-013
+  it("runs one call at a time once a call meets a rate limit, letting running calls finish", async () => {
+    const s = new Scheduler(3);
+    let active = 0;
+    let peak = 0;
+    const task = (ms: number) => s.run("machine", async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, ms));
+      active--;
+    });
+    const first = [task(30), task(30), task(30)];
+    await new Promise((r) => setTimeout(r, 5));
+    s.throttle();
+    peak = active;
+    const later = Array.from({ length: 4 }, () => task(5));
+    await Promise.all([...first, ...later]);
+    expect(s.cap).toBe(1);
+    expect(peak).toBe(3); // the three already running finished
+    let after = 0;
+    let afterPeak = 0;
+    await Promise.all(Array.from({ length: 4 }, () => s.run("machine", async () => { after++; afterPeak = Math.max(afterPeak, after); await new Promise((r) => setTimeout(r, 5)); after--; })));
+    expect(afterPeak).toBe(1);
+  });
+
+  // @spec PIPE-CALL-013
+  it("throttles the run's scheduler when a call is rate limited, by the CLI or by its result", async () => {
+    for (const runner of [
+      (() => { let n = 0; return async (req: ClaudeRequest) => { if (n++ === 0) throw new RateLimitError("429"); void req; return { text: '{"ok":true}', truncated: false }; }; })(),
+      async (req: ClaudeRequest) => { req.onRateLimitRetry?.(10); return { text: '{"ok":true}', truncated: false }; },
+    ]) {
+      const scheduler = new Scheduler(3);
+      await callJson(env(runner, { scheduler }), { prompt: "p", vars: { thing: "x" }, branch: "human" });
+      expect(scheduler.cap).toBe(1);
+    }
   });
 });
