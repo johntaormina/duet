@@ -38,6 +38,14 @@ describe("sinks", () => {
     expect(calls.flat().some((a) => a === "review" || a === "--approve" || a === "--request-changes")).toBe(false);
   });
 
+  it("retries a failed gh post", async () => {
+    let n = 0;
+    const exec: Exec = async () => { if (n++ < 2) throw new Error("HTTP 502"); return ""; };
+    const result = await guardSink(ghSink({ exec, delayMs: 1 })).post(signPost({ target: "pr#3", text: "x" }), "x");
+    expect(result.ok).toBe(true);
+    expect(n).toBe(3);
+  });
+
   // @spec ADPT-SINK-005
   it("reports whether each post succeeded", async () => {
     const failing = guardSink({ name: "f", async send() { throw new Error("network down"); } });
