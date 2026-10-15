@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { gitSource } from "@duet/adapters";
 import { openStore } from "@duet/store";
 import { describe, expect, it } from "vitest";
 import { acquireLock, ask, CallTimeoutError, clean, LockHeldError, main, mergeFindings, run, type ClaudeRequest } from "../src/index.ts";
@@ -349,3 +350,14 @@ describe("progress log", () => {
   });
 });
 
+
+describe("pull request runs", () => {
+  // @spec PIPE-CLI-007
+  it("records the pull request number in run.json", async () => {
+    const repo = fixtureRepo();
+    const fake = fakeClaude(happyHandlers());
+    const gh = { name: "gh", resolve: async (_ref: unknown, ctx: { repoRoot: string; runRoot: string }) => ({ ...(await gitSource().resolve({ kind: "refs", base: "main", head: "feature" }, ctx)), pr: 7 }) };
+    const s = await run({ repoRoot: repo.dir, change: { kind: "pr", number: 7 }, sources: [gh], runner: fake.runner, sleep: noSleep, userConfigDir });
+    expect(openStore({ repoRoot: repo.dir }).reader(s.runId).read("run")!.pr).toBe(7);
+  });
+});

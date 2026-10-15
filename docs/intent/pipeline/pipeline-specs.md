@@ -10,6 +10,7 @@ Design: `pipeline-design.md`. "The engine" is the pipeline program. "Human-layer
 - [x] **PIPE-CLI-003**: The engine shall provide an `ask` operation that takes a run, a card id, a question, and whether the reviewer may see that card's recommendation, and returns Claude's answer.
 - [x] **PIPE-CLI-004**: The engine shall provide a `clean` operation that removes named runs, or runs older than a given age, together with their head worktrees and snapshot refs.
 - [x] **PIPE-CLI-006**: When `run` has created or found its run, and before any stage runs, the engine shall write `duet-run <run-id> <run-dir>` as one line on standard error.
+- [x] **PIPE-CLI-007**: When `run` is given a pull request, the engine shall record its number in `run.json`.
 
 ## Head worktree
 

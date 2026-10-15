@@ -2,7 +2,7 @@ import type { GuardedSink, SignedPost } from "@duet/adapters";
 import type { ReviewSession } from "@duet/session";
 
 /**
- * Posting the decision log: the reviewer sees and may edit the exact text, approves it, and only the
+ * Posting the review comment: the reviewer sees and may edit the exact text, approves it, and only the
  * approved text is sent. Any edit after approval withdraws the approval.
  */
 // @spec EXT-POST-001, EXT-POST-002, EXT-POST-003
@@ -14,8 +14,9 @@ export class PostFlow {
     private session: ReviewSession,
     private target: string,
     private sink: GuardedSink,
+    opts: { linkBase?: string } = {},
   ) {
-    this.text = session.decisionLog();
+    this.text = session.reviewComment(opts);
   }
 
   get draft(): string {
@@ -43,4 +44,11 @@ export class PostFlow {
     this.session.recordPost(this.signed, result);
     return result;
   }
+}
+
+/** The web address of a GitHub repository from its remote URL, for permalinks; undefined for other hosts. */
+// @spec EXT-POST-006
+export function githubLinkBase(remote: string): string | undefined {
+  const m = /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(remote.trim());
+  return m ? `https://github.com/${m[1]}/${m[2]}` : undefined;
 }

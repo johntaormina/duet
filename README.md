@@ -12,7 +12,7 @@ Duet never approves or blocks a change. It records the decisions you made, and p
 - Node.js 20 or later (developed on 24)
 - git
 - The [Claude CLI](https://docs.claude.com/en/docs/claude-code) (`claude`), signed in. Duet talks to Claude only through it, and needs no API key.
-- [`gh`](https://cli.github.com/), signed in, to review pull requests and post decision logs
+- [`gh`](https://cli.github.com/), signed in, to review pull requests and post review comments
 
 ## Install
 
@@ -45,9 +45,9 @@ Open a git repository, then from the Command Palette:
 
 - **Duet: Start review**: review the current branch against a base, your working tree (to check your own changes before committing), or a pull request. You can add a line on what you believe the change does and why, and point Duet at an agent's plan or transcript.
 - **Duet: Open review**: reopen an earlier review.
-- **Duet: Post decision log**: post your decisions to a pull request, after you approve the exact text.
+- **Duet: Post review comment**: post one comment to the pull request (a summary, your decisions, then the verified findings), after you approve the exact text. The review panel has a button for it and shows a live preview at the end of the Decisions tab.
 
-The review panel opens as soon as the review starts, and fills in as stages finish. A usable briefing usually arrives within a few minutes; findings follow when the background checks finish. Findings appear in the Duet view in the activity bar and as comments on the code.
+The review panel opens as soon as the review starts, and fills in as stages finish. A usable briefing usually arrives within a few minutes; findings follow when the background checks finish. Findings appear in the Duet view in the activity bar and as comments on the code. Progress shows in a notification, the status bar, and the panel's stage strip; **Duet: Show log** (or clicking the status bar item) shows each stage and Claude call as it happens.
 
 ### From the command line
 
@@ -116,7 +116,7 @@ The design lives in `docs/`: the high-level design in `docs/high-level-design.md
 | `packages/store` | Run files: schemas, validation, atomic writes, cache keys |
 | `packages/adapters` | Sources, sinks, configuration, overlays |
 | `packages/engine` | The `duet` command: context pack, stages, prompts |
-| `packages/session` | One reviewer's session: blind-first, answers, the decision log |
+| `packages/session` | One reviewer's session: blind-first, answers, the review comment |
 | `packages/vscode` | The VS Code extension |
 
 ## License

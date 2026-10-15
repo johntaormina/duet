@@ -14,7 +14,7 @@ import { buildFindingsTree, findingActions } from "../src/findings.ts";
 import { handleMessage, type ControllerHooks } from "../src/panel/controller.ts";
 import { CLIENT, renderPanel } from "../src/panel/html.ts";
 import { buildPanelModel, SPLIT_BANNER, type PanelModel, type Placeholder } from "../src/panel/model.ts";
-import { PostFlow } from "../src/post.ts";
+import { githubLinkBase, PostFlow } from "../src/post.ts";
 import { progressText, stageProgress } from "../src/progress.ts";
 import { listRuns, watchRun } from "../src/runs.ts";
 import { terminalLaunch } from "../src/terminal.ts";
@@ -150,7 +150,7 @@ describe("panel controller", () => {
   function hooks() {
     const posted: unknown[] = [];
     let refreshed = 0;
-    const h: ControllerHooks = { post: (m) => void posted.push(m), refresh: () => void refreshed++, askReason: async () => "Changed my mind.", openAnchor: () => {}, openTerminal: () => {}, showLog: () => {} };
+    const h: ControllerHooks = { post: (m) => void posted.push(m), refresh: () => void refreshed++, askReason: async () => "Changed my mind.", openAnchor: () => {}, openTerminal: () => {}, showLog: () => {}, postComment: () => {}, ready: () => {} };
     return { h, posted, refreshes: () => refreshed };
   }
 
@@ -387,7 +387,7 @@ describe("starting and opening reviews", () => {
   });
 });
 
-describe("posting the decision log", () => {
+describe("posting the review comment", () => {
   function flow() {
     const s = setup();
     const sent: string[] = [];
@@ -396,9 +396,11 @@ describe("posting the decision log", () => {
   }
 
   // @spec EXT-POST-001
-  it("starts from the session's exact decision log, editable", () => {
+  it("starts from the session's exact review comment, editable", () => {
     const { s, flow: f } = flow();
-    expect(f.draft).toBe(s.session.decisionLog());
+    expect(f.draft).toBe(s.session.reviewComment());
+    const linked = new PostFlow(s.session, "pr#9", guardSink({ name: "x", async send() {} }), { linkBase: "https://github.com/o/r" });
+    expect(linked.draft).toBe(s.session.reviewComment({ linkBase: "https://github.com/o/r" }));
     f.edit("edited text");
     expect(f.draft).toBe("edited text");
   });
@@ -438,9 +440,12 @@ function activateWithFakes(repo: string, engineScript: string) {
     channel: { name: "", lines: [] as string[], shown: 0 },
     status: { text: "", command: "" as unknown, visible: false },
     progress: [] as { location: unknown; reports: { message?: string; increment?: number }[] }[],
-    panels: [] as { htmlSets: number; html: string; send(m: unknown): void }[],
+    panels: [] as { htmlSets: number; html: string; messages: unknown[]; send(m: unknown): void }[],
     opened: [] as string[],
     planPick: "No, skip",
+    inputs: [] as string[],
+    executed: [] as unknown[][],
+    docs: [] as string[],
     openPick: undefined as string | undefined,
   };
   Object.assign(vscode.workspace, {
@@ -448,7 +453,9 @@ function activateWithFakes(repo: string, engineScript: string) {
     getConfiguration: () => ({ get: (k: string) => (k === "nodePath" ? process.execPath : undefined) }),
     openTextDocument: async (x: unknown) => {
       rec.opened.push(typeof x === "string" ? x : JSON.stringify(x));
-      return { getText: () => "" };
+      const content = typeof x === "object" && x && "content" in x ? String((x as { content: string }).content) : "";
+      if (content) rec.docs.push(content);
+      return { getText: () => content, uri: { toString: () => `untitled:${rec.docs.length}` } };
     },
   });
   Object.assign(vscode.window, {
@@ -458,7 +465,10 @@ function activateWithFakes(repo: string, engineScript: string) {
       const withRun = (items as { runId?: string }[]).find((i) => i.runId && i.runId === rec.openPick);
       return withRun ?? items[0];
     },
-    showInputBox: async (o: { value?: string }) => o.value ?? "",
+    showInputBox: async (o: { value?: string; prompt?: string }) => {
+      rec.inputs.push(o.prompt ?? "");
+      return o.value ?? "";
+    },
     showOpenDialog: async () => undefined,
     showErrorMessage: async (m: string) => void rec.errors.push(m),
     showWarningMessage: async (m: string) => void rec.warnings.push(m),
@@ -488,7 +498,7 @@ function activateWithFakes(repo: string, engineScript: string) {
     createWebviewPanel: () => {
       let listener: (m: unknown) => void = () => {};
       let html = "";
-      const p = { htmlSets: 0, html: "", send: (m: unknown) => listener(m) };
+      const p = { htmlSets: 0, html: "", messages: [] as unknown[], send: (m: unknown) => listener(m) };
       rec.panels.push(p);
       return {
         title: "",
@@ -497,7 +507,7 @@ function activateWithFakes(repo: string, engineScript: string) {
           get html() { return html; },
           set html(v: string) { html = v; p.html = v; p.htmlSets++; },
           onDidReceiveMessage: (cb: (m: unknown) => void) => void (listener = cb),
-          postMessage: async () => true,
+          postMessage: async (m: unknown) => { p.messages.push(m); return true; },
         },
         onDidDispose: () => {},
         dispose() {},
@@ -506,6 +516,10 @@ function activateWithFakes(repo: string, engineScript: string) {
     },
   });
   Object.assign(vscode.commands, {
+    executeCommand: async (...a: unknown[]) => {
+      rec.executed.push(a);
+      return a[0] === "markdown.api.render" ? `<p>rendered ${String(a[1]).length}</p>` : undefined;
+    },
     registerCommand: (id: string, fn: (...a: unknown[]) => unknown) => {
       rec.handlers[id] = fn as never;
       return { dispose() {} };
@@ -596,7 +610,7 @@ describe("panel progress and view state", () => {
     const s = setup();
     let shown = 0;
     let refreshed = 0;
-    const h: ControllerHooks = { post: () => {}, refresh: () => void refreshed++, askReason: async () => "", openAnchor: () => {}, openTerminal: () => {}, showLog: () => void shown++ };
+    const h: ControllerHooks = { post: () => {}, refresh: () => void refreshed++, askReason: async () => "", openAnchor: () => {}, openTerminal: () => {}, showLog: () => void shown++, postComment: () => {}, ready: () => {} };
     await handleMessage(s.session, h, { type: "showLog" });
     expect([shown, refreshed]).toEqual([1, 0]);
   });
@@ -738,3 +752,79 @@ function fakePanelDom(opts: { committed?: boolean } = {}) {
 function runClient(dom: ReturnType<typeof fakePanelDom>, api: unknown) {
   new Function("acquireVsCodeApi", "document", "window", CLIENT)(() => api, dom.doc, dom.win);
 }
+
+describe("review comment in the extension", () => {
+  // @spec EXT-POST-006
+  it("derives a GitHub code-link base from the origin remote", () => {
+    expect(githubLinkBase("git@github.com:o/r.git")).toBe("https://github.com/o/r");
+    expect(githubLinkBase("https://github.com/o/r.git")).toBe("https://github.com/o/r");
+    expect(githubLinkBase("https://github.com/o/r")).toBe("https://github.com/o/r");
+    expect(githubLinkBase("ssh://git@github.com/o/r.git")).toBe("https://github.com/o/r");
+    expect(githubLinkBase("https://gitlab.com/o/r.git")).toBeUndefined();
+    expect(githubLinkBase("")).toBeUndefined();
+  });
+
+  // @spec EXT-POST-004
+  it("shows a Post review comment control with the answered count, and routes it to the post flow", async () => {
+    const s = setup();
+    s.session.commit("D1", 1, "Bounded is safer");
+    const html = renderPanel(model(s), "n", "csp");
+    expect(html).toContain('<button class="post" data-action="post">Post review comment (1 of 2 decided)</button>');
+    let posted = 0;
+    const h: ControllerHooks = { post: () => {}, refresh: () => {}, askReason: async () => "", openAnchor: () => {}, openTerminal: () => {}, showLog: () => {}, postComment: () => void posted++, ready: () => {} };
+    await handleMessage(s.session, h, { type: "post" });
+    expect(posted).toBe(1);
+  });
+
+  // @spec EXT-POST-007
+  it("ends the Decisions tab with a preview the extension fills from VS Code's markdown renderer", async () => {
+    const html = renderPanel(model(setup()), "n", "csp");
+    const dec = html.slice(html.indexOf('id="tab-decisions"'));
+    expect(dec).toMatch(/<section class="comment-preview"[^>]*>[\s\S]*<div id="comment-preview"><\/div><\/section><\/div>/);
+    const s = setup();
+    const rec = activateWithFakes(s.repo, fakeEngine(s.store.runDir("r1")));
+    rec.openPick = "r1";
+    await rec.handlers["duet.openReview"]();
+    rec.panels[0].send({ type: "ready" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rec.executed.some((a) => a[0] === "markdown.api.render" && a[1] === s.session.reviewComment())).toBe(true);
+    expect(rec.panels[0].messages).toContainEqual({ type: "preview", html: expect.stringMatching(/^<p>rendered \d+<\/p>$/) });
+  });
+
+  // @spec EXT-POST-007
+  it("puts the preview into the panel when it arrives", () => {
+    const dom = fakePanelDom();
+    const target = { innerHTML: "" };
+    const doc = dom.doc as unknown as { getElementById: (id: string) => unknown };
+    doc.getElementById = (id: string) => (id === "comment-preview" ? target : null);
+    const sent: unknown[] = [];
+    let onMessage: ((e: { data: unknown }) => void) | undefined;
+    const win = { addEventListener: (t: string, fn: (e: { data: unknown }) => void) => void (t === "message" && (onMessage = fn)) };
+    new Function("acquireVsCodeApi", "document", "window", CLIENT)(() => ({ postMessage: (m: unknown) => sent.push(m), getState: () => undefined, setState: () => {} }), dom.doc, win);
+    expect(sent).toContainEqual({ type: "ready" });
+    onMessage!({ data: { type: "preview", html: "<p>x</p>" } });
+    expect(target.innerHTML).toBe("<p>x</p>");
+  });
+
+  // @spec EXT-POST-005, EXT-POST-008
+  it("posts to the run's pull request without asking, and offers a Post button while the draft is open", async () => {
+    const s = setup();
+    const pr = s.store.pipeline("r2");
+    pr.initRun({ base: "c".repeat(40), head: HEAD, title: "PR run", pr: 12 });
+    const rec = activateWithFakes(s.repo, fakeEngine(s.store.runDir("r1")));
+    rec.openPick = "r2";
+    await rec.handlers["duet.openReview"]();
+    await rec.handlers["duet.postReviewComment"]();
+    expect(rec.inputs.filter((p) => /pull request/i.test(p))).toEqual([]);
+    expect(rec.docs.at(-1)).toContain("PR run");
+    expect(rec.executed).toContainEqual(["setContext", "duet.reviewCommentDraft", true]);
+    expect(typeof rec.handlers["duet.postReviewComment.approve"]).toBe("function");
+    rec.openPick = "r1";
+    await rec.handlers["duet.openReview"]();
+    await rec.handlers["duet.postReviewComment"]();
+    expect(rec.inputs.some((p) => /pull request/i.test(p))).toBe(true);
+    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
+    expect(pkg.contributes.menus["editor/title"]).toContainEqual(expect.objectContaining({ command: "duet.postReviewComment.approve", when: "duet.reviewCommentDraft && resourceScheme == untitled" }));
+    expect(pkg.contributes.commands.map((c: { command: string; title: string }) => [c.command, c.title])).toContainEqual(["duet.postReviewComment", "Post review comment"]);
+  });
+});

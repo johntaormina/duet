@@ -29,6 +29,16 @@ describe("manifest and stage status", () => {
     expect(STAGES).toEqual(["context", "intent", "briefing", "cards", "recommendations", "findings"]);
   });
 
+  // @spec ART-RUN-009
+  it("records an optional pull request number and keeps it when the run is resumed", () => {
+    const store = openStore({ repoRoot: tempRepo() });
+    const p = store.pipeline("r9");
+    p.initRun({ base: SHA_A, head: SHA_B, title: "PR", pr: 12 });
+    expect(store.reader("r9").read("run")!.pr).toBe(12);
+    p.initRun({ base: SHA_A, head: SHA_B, title: "PR" });
+    expect(store.reader("r9").read("run")!.pr).toBe(12);
+  });
+
   // @spec ART-STAGE-003
   it("records status, start time, finish time, and cache key for each stage", () => {
     const { store, pipeline } = setup();

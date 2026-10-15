@@ -60,6 +60,10 @@ export function cardHtml(c: CardView): string {
 export function renderPanel(m: PanelModel, nonce: string, cspSource: string): string {
   const strip = m.stages.map((s) => `<span class="stage ${s.status}" title="${esc(s.error ?? s.detail ?? s.status)}">${esc(s.name)} ${s.status === "complete" ? "✓" : s.status === "failed" ? "✗" : s.status === "running" ? "…" : "·"}</span>`).join("");
   // @spec EXT-VIEW-013
+  // @spec EXT-POST-004
+  const postButton = `<button class="post" data-action="post">Post review comment (${m.answered.done} of ${m.answered.total} decided)</button>`;
+  // @spec EXT-POST-007
+  const preview = `<section class="comment-preview" aria-label="Review comment preview"><h2>Review comment preview</h2><p class="preview-note">What Post review comment would post right now. You can still edit it before posting.</p><div id="comment-preview"></div></section>`;
   const progress = `<div class="progress"><div class="progress-bar" style="width:${stageProgress(m.stages).percent}%"></div></div><button class="log-link" data-action="show-log">Show log</button>`;
   const intent = isPlaceholder(m.intent)
     ? stagePlaceholder(m.intent)
@@ -75,10 +79,10 @@ export function renderPanel(m: PanelModel, nonce: string, cspSource: string): st
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(m.title)}</title><style>${STYLE}</style></head>
-<body><header class="top"><h1>${esc(m.title)}</h1><div class="strip">${strip}${progress}</div>${m.effort ? `<div class="effort">Effort ${m.effort.score}/5 (~${m.effort.minutes} min)</div>` : ""}</header>
+<body><header class="top"><div class="title-row"><h1>${esc(m.title)}</h1>${postButton}</div><div class="strip">${strip}${progress}</div>${m.effort ? `<div class="effort">Effort ${m.effort.score}/5 (~${m.effort.minutes} min)</div>` : ""}</header>
 ${m.banner ? `<div class="banner">${esc(m.banner)}</div>` : ""}
 <nav><button class="tab active" data-tab="briefing">Briefing</button><button class="tab" data-tab="decisions">Decisions${isPlaceholder(m.deck) ? "" : ` (${m.deck.length})`}</button></nav>
-<main><div class="tabpane" id="tab-briefing">${intent}${choices}${settled}${steps}</div><div class="tabpane hidden" id="tab-decisions">${deck}</div></main>
+<main><div class="tabpane" id="tab-briefing">${intent}${choices}${settled}${steps}</div><div class="tabpane hidden" id="tab-decisions">${deck}${preview}</div></main>
 <script nonce="${nonce}">${CLIENT}</script></body></html>`;
 }
 
@@ -143,6 +147,20 @@ body.vscode-high-contrast :focus-visible,body.vscode-high-contrast-light :focus-
 .stage.failed{color:var(--d-err);border-color:var(--d-err);background:color-mix(in srgb,var(--d-err) var(--d-tint),var(--d-bg));font-weight:600}
 .progress{position:relative;width:100%;height:2px;margin-top:8px;overflow:hidden;border-radius:1px;background:var(--d-border)}
 .progress-bar{height:100%;background:var(--vscode-progressBar-background,var(--d-focus));transition:width .3s ease}
+.title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}.title-row h1{margin-bottom:6px}
+button.post{flex:none;color:var(--vscode-button-foreground);background:var(--vscode-button-background)}
+button.post:hover:not(:disabled){background:var(--vscode-button-hoverBackground)}
+.comment-preview{margin:32px 0 24px;padding-top:16px;border-top:1px solid var(--d-border)}
+.comment-preview .preview-note{margin:0 0 12px;font-size:var(--d-small);color:var(--d-muted)}
+#comment-preview{max-width:880px;padding:12px 16px;border:1px solid var(--d-border);border-radius:6px;background:var(--d-bg)}
+#comment-preview:empty::before{content:"Rendering…";color:var(--d-muted)}
+#comment-preview details{margin:6px 0;padding:2px 0}
+#comment-preview details details{margin-left:16px}
+#comment-preview summary{cursor:pointer}
+#comment-preview table{border-collapse:collapse;margin:8px 0}
+#comment-preview th,#comment-preview td{border:1px solid var(--d-border);padding:3px 10px}
+#comment-preview blockquote{margin:8px 0;padding:4px 12px;border-left:3px solid var(--vscode-editorWarning-foreground,var(--d-border))}
+#comment-preview hr{border:none;border-top:1px solid var(--d-border);margin:16px 0}
 .log-link{font:inherit;font-size:var(--d-small);background:none;border:none;padding:0 2px;color:var(--d-link);cursor:pointer}
 .log-link:hover{color:var(--d-link-active);text-decoration:underline}
 .effort{margin-top:6px;font-size:var(--d-small);color:var(--d-muted)}
@@ -252,7 +270,7 @@ button.terminal{font-size:var(--d-small);padding:1px 8px;margin-left:auto}
 .ask-row input{flex:1;min-width:0}
 `;
 
-// @spec EXT-VIEW-016, EXT-VIEW-013
+// @spec EXT-VIEW-016, EXT-VIEW-013, EXT-POST-004, EXT-POST-007
 export const CLIENT = `const vscode=acquireVsCodeApi();
 const send=(m)=>vscode.postMessage(m);
 const view=Object.assign({tab:'briefing'},vscode.getState()||{});view.scroll=view.scroll||{};view.drafts=view.drafts||{};
@@ -277,6 +295,7 @@ document.querySelectorAll('button.ask-btn').forEach(b=>b.onclick=()=>{const i=do
 document.querySelectorAll('button.terminal').forEach(b=>b.onclick=()=>send({type:'terminal',cardId:b.dataset.card}));
 document.querySelectorAll('a.anchor').forEach(a=>a.onclick=(e)=>{e.preventDefault();send({type:'openAnchor',anchor:JSON.parse(a.dataset.anchor)});});
 document.querySelectorAll('[data-action="show-log"]').forEach(b=>b.onclick=()=>send({type:'showLog'}));
+document.querySelectorAll('[data-action="post"]').forEach(b=>b.onclick=()=>send({type:'post'}));
 document.querySelectorAll('.card').forEach(c=>{const id=c.dataset.card;let restored=false;
 const fs=c.querySelector('fieldset');const o=view.drafts['o:'+id];
 if(o!==undefined&&fs&&!fs.disabled){const r=c.querySelector('input[type=radio][value="'+o+'"]');if(r){r.checked=true;restored=true;}}
@@ -286,4 +305,6 @@ const q=c.querySelector('input.ask');const qv=view.drafts['q:'+id];if(qv!==undef
 if(restored)check(id);});
 showTab(view.tab)||showTab('briefing');scroller().scrollTop=view.scroll[view.tab]||0;save();
 window.addEventListener('message',e=>{const m=e.data;if(m.type==='checkResult'){const b=document.querySelector('button.commit[data-card="'+m.cardId+'"]');if(b)b.disabled=!m.ok;const s=document.querySelector('.check[data-card="'+m.cardId+'"]');if(s)s.textContent=m.ok?'':m.reason;}
-if(m.type==='error'){const d=document.createElement('div');d.className='notice';d.textContent=m.message;document.body.prepend(d);}});`;
+if(m.type==='preview'){const el=document.getElementById('comment-preview');if(el)el.innerHTML=m.html;}
+if(m.type==='error'){const d=document.createElement('div');d.className='notice';d.textContent=m.message;document.body.prepend(d);}});
+send({type:'ready'});`;

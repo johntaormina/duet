@@ -15,7 +15,7 @@ The extension is the first interface. It starts reviews, shows them as they fill
 - **Open review**: pick an existing run in the workspace.
 - **Show log**: show the engine's log for the open review (see *Progress and Logs*).
 - **Ask Claude about this card** and **Open Claude in a terminal for this card**.
-- **Post decision log**.
+- **Post review comment**.
 
 ## Running the Engine
 
@@ -66,9 +66,13 @@ A card shows its question, why it matters, the literal technical statement, the 
 
 Each card has a question box. The extension passes the question to the review session and shows the answer under the card with earlier questions. **Open Claude in a terminal** opens an integrated terminal running interactive Claude in the run's head worktree, started with a prompt that names the card and the files that hold its context. While the review session would not yet show the recommendation, the prompt excludes it and repeats the rule that Claude does not give a lean before commitment, and Claude is started with reading the run directory denied, so it cannot open the recommendation itself. Questions asked in the terminal are not recorded.
 
-## Posting the Decision Log
+## Posting the Review Comment
 
-The extension shows the exact decision-log text produced by the session, editable. Approving that text creates the signed post through the session; posting goes through the configured sink. Any edit after approval requires approving again.
+The review panel's header has a **Post review comment** button showing how many cards are answered out of the deck, and the same flow is available as a command. When the review is of a pull request the comment goes to that pull request; otherwise the extension asks for the number. When the repository's `origin` remote is on GitHub, the extension gives the session a code-link base for it, so line references become permalinks.
+
+The Decisions tab ends with a **preview of the review comment**, rendered as markdown by VS Code's own renderer and refreshed with the panel, so the reviewer sees the comment take shape as they answer cards.
+
+Posting opens the exact review-comment text produced by the session in an editor, editable. While that editor is active, its title bar has a **Post to PR #N** button; it and the Approve and post button in the accompanying message are the two ways to approve. Approving creates the signed post for the text in the editor at that moment, through the session; posting goes through the configured sink. Any edit after approval requires approving again.
 
 ## Decisions & Alternatives
 
@@ -84,6 +88,7 @@ The extension shows the exact decision-log text produced by the session, editabl
 | Progress display | A progress notification for a running Start review, a status bar item for the open review, and a bar in the panel's stage strip, all counted from `run.json` | Parse the engine's progress lines | `run.json` is the contract; the progress lines are for people and may change wording |
 | Engine output | Streamed to an output channel that is never forced to the front | Open the channel on start; show nothing | Most reviewers do not want a log; the ones diagnosing a slow or failed run need it to be there |
 | Show log for a reopened run | Open the run's `engine.log` | Replay it into the output channel | The file is the record and keeps updating while an engine started elsewhere writes to it; a replayed copy goes stale |
+| Comment preview | VS Code's markdown renderer, shown at the end of the Decisions tab | A markdown library in the webview; the raw markdown; the editor's side-by-side preview | The built-in renderer handles the collapsible sections and alerts the comment uses with no new dependency, and keeping the preview in the panel puts it beside the cards that change it |
 
 ## Open Questions & Future Decisions
 

@@ -17,6 +17,8 @@ export interface RunManifest {
   base: string;
   head: string;
   title: string;
+  /** The pull request number, when the change was named as one. */
+  pr?: number;
   stages: Record<Stage, StageEntry>;
 }
 

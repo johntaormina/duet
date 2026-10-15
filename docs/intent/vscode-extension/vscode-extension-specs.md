@@ -59,6 +59,11 @@ Design: `vscode-extension-design.md`. "The extension" is the VS Code extension. 
 
 ## Posting
 
-- [x] **EXT-POST-001**: When the reviewer chooses Post decision log, the extension shall show the exact decision-log text from the review session in an editable view.
+- [x] **EXT-POST-001**: When the reviewer chooses Post review comment, the extension shall show the exact review-comment text from the review session in an editable editor.
 - [x] **EXT-POST-002**: When the reviewer approves the shown text, the extension shall create a signed post for exactly that text through the review session and send it to the configured sink.
 - [x] **EXT-POST-003**: When the reviewer edits the text after approving it, the extension shall require approval again before posting.
+- [x] **EXT-POST-004**: The review panel's header shall show a Post review comment control, labelled with the number of answered cards out of the deck, that starts the same flow as the Post review comment command.
+- [x] **EXT-POST-005**: When the open review's `run.json` records a pull request number, the Post review comment flow shall post to that pull request without asking for a number; otherwise it shall ask for one.
+- [x] **EXT-POST-006**: When the repository's `origin` remote is a GitHub repository, the extension shall give the review session that repository's web address as the code-link base for the review comment.
+- [x] **EXT-POST-007**: The review panel's Decisions tab shall end with a preview of the review comment rendered by VS Code's markdown renderer, updated each time the panel refreshes.
+- [x] **EXT-POST-008**: While the editor holding a review-comment draft is active, the extension shall show a Post button in the editor title bar that approves and posts the text in that editor.

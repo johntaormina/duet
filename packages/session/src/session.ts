@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { renderReviewComment } from "./comment.ts";
 import { type PostResult, type SignedPost, signPost } from "@duet/adapters";
 import {
   type Answer,
@@ -258,28 +259,27 @@ export class ReviewSession {
     return rec;
   }
 
-  // @spec SESS-REC-004, SESS-REC-005
-  decisionLog(): string {
-    const rec = this.record();
-    const cards = this.cards();
+  /** The review comment the reviewer may post: summary, decisions, then the machine review. */
+  // @spec SESS-REC-004, SESS-REC-005, SESS-REC-009, SESS-REC-010, SESS-REC-011, SESS-REC-012, SESS-REC-013, SESS-REC-014, SESS-REC-015, SESS-REC-016, SESS-REC-017, SESS-REC-018, SESS-REC-019, SESS-REC-020
+  reviewComment(opts: { linkBase?: string } = {}): string {
     const run = this.reader.read("run");
-    const lines = ["## Duet decision log", ""];
-    const answered = cards.map((c) => ({ c, a: this.reader.answerFor(rec, c) })).filter((x) => x.a.status === "current");
-    for (const { c, a } of answered) {
-      if (a.status === "none") continue;
-      const ans = a.answer;
-      const recm = this.reader.getRecommendation(c);
-      lines.push(`### ${c.question}`, "");
-      lines.push(`- Chose: ${c.options[ans.chosen_option]?.summary ?? ans.chosen_option}`);
-      if (ans.rationale) lines.push(`- Rationale: ${ans.rationale}`);
-      lines.push(`- Matched Claude's recommendation: ${recm ? (recm.option === ans.chosen_option ? "yes" : "no") : "not available"}`);
-      lines.push(`- Changed after commitment: ${ans.changes.length ? "yes" : "no"}`, "");
-    }
-    const unanswered = cards.filter((c) => this.reader.answerFor(rec, c).status !== "current");
-    if (unanswered.length) lines.push("### Unanswered", "", ...unanswered.map((c) => `- ${c.question}`), "");
-    const incomplete = STAGES.filter((s) => run?.stages[s].status !== "complete");
-    if (incomplete.length) lines.push("### Incomplete stages", "", ...incomplete.map((s) => `- ${s}: ${run?.stages[s].status ?? "unknown"}`), "");
-    return lines.join("\n");
+    if (!run) throw new SessionError(`run ${this.runId} has no run.json`);
+    const rec = this.record();
+    const decisions = this.cards().map((card) => {
+      const a = this.reader.answerFor(rec, card);
+      if (a.status !== "current") return { card };
+      const recm = this.reader.getRecommendation(card);
+      return { card, answer: { option: a.answer.chosen_option, rationale: a.answer.rationale ?? "", changed: a.answer.changes.length > 0, agreed: recm ? recm.option === a.answer.chosen_option : undefined } };
+    });
+    return renderReviewComment({
+      run,
+      intent: this.reader.read("intent"),
+      decisions,
+      findings: this.findings().filter((f) => f.state === "open"),
+      totalFindings: this.reader.read("findings")?.findings.length ?? 0,
+      threshold: this.threshold,
+      linkBase: opts.linkBase,
+    });
   }
 
   // @spec SESS-REC-006

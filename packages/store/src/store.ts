@@ -166,8 +166,8 @@ export class PipelineWriter {
     this.dir = ensureRunDir(store, runId);
   }
 
-  // @spec ART-STAGE-001, ART-STAGE-002
-  initRun(id: { base: string; head: string; title: string }): RunManifest {
+  // @spec ART-STAGE-001, ART-STAGE-002, ART-RUN-009
+  initRun(id: { base: string; head: string; title: string; pr?: number }): RunManifest {
     const existing = readVersioned<RunManifest>(join(this.dir, "run.json"));
     if (existing) return existing;
     const run: RunManifest = {
@@ -176,6 +176,7 @@ export class PipelineWriter {
       base: id.base,
       head: id.head,
       title: id.title,
+      ...(id.pr !== undefined ? { pr: id.pr } : {}),
       stages: Object.fromEntries(STAGES.map((s) => [s, emptyStage()])) as Record<Stage, StageEntry>,
     };
     this.writeChecked("run", run);

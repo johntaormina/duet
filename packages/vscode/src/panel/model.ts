@@ -52,6 +52,8 @@ export interface PanelModel {
   deckNotices: string[];
   banner?: string;
   noDecisionsSummary?: string;
+  /** Cards answered out of the deck, for the Post review comment control. */
+  answered: { done: number; total: number };
 }
 
 export const SOURCE_LABELS = { stated: "Stated by the author", inferred: "Inferred by Claude", none: "No reason found" } as const;
@@ -132,5 +134,6 @@ export function buildPanelModel(reader: RunReader, session: ReviewSession, revie
     deckNotices,
     banner: deck && deck.length > 7 ? SPLIT_BANNER : undefined,
     noDecisionsSummary: cards?.no_decisions_summary,
+    answered: { done: (deck ?? []).filter((c) => c.committed).length, total: deck?.length ?? 0 },
   };
 }

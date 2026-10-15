@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, type FSWatcher, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,7 +12,7 @@ import { buildFindingsTree, findingActions, type FindingsNode } from "./findings
 import { handleMessage, type PanelMessage } from "./panel/controller.ts";
 import { renderPanel } from "./panel/html.ts";
 import { buildPanelModel } from "./panel/model.ts";
-import { PostFlow } from "./post.ts";
+import { githubLinkBase, PostFlow } from "./post.ts";
 import { progressText, runStages, stageProgress } from "./progress.ts";
 import { listRuns, watchRun } from "./runs.ts";
 import { terminalLaunch } from "./terminal.ts";
@@ -28,6 +29,22 @@ let current: OpenReview | null = null;
 
 function repoRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+const linkBases = new Map<string, string | undefined>();
+/** The GitHub web address of the repository's origin remote, for permalinks in the review comment. */
+// @spec EXT-POST-006
+function linkBase(root: string): string | undefined {
+  if (!linkBases.has(root)) {
+    let remote = "";
+    try {
+      remote = execFileSync("git", ["remote", "get-url", "origin"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      // No origin remote.
+    }
+    linkBases.set(root, githubLinkBase(remote));
+  }
+  return linkBases.get(root);
 }
 
 function nodePath(): string {
@@ -70,6 +87,44 @@ export function activate(context: vscode.ExtensionContext): void {
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path), { preview: true });
   };
 
+  /** The review-comment draft being edited, while one is open. */
+  let draft: { doc: vscode.TextDocument; flow: PostFlow; pr: string } | null = null;
+  const setDraftContext = (on: boolean) => void vscode.commands.executeCommand("setContext", "duet.reviewCommentDraft", on);
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor?.((e) => setDraftContext(!!draft && e?.document === draft.doc)) ?? { dispose() {} },
+  );
+
+  // @spec EXT-POST-002, EXT-POST-003, EXT-POST-008
+  const approveAndPost = async () => {
+    if (!draft) return;
+    const { doc, flow, pr } = draft;
+    flow.edit(doc.getText());
+    flow.approve();
+    const result = await flow.post();
+    if (!result.ok) return void vscode.window.showErrorMessage(`Not posted: ${result.error}`);
+    draft = null;
+    setDraftContext(false);
+    void vscode.window.showInformationMessage(`Posted to pull request #${pr}.`);
+  };
+
+  const postComment = async () => {
+    if (!current) return void vscode.window.showInformationMessage("Open a Duet review first.");
+    const { root, store } = setup();
+    const recorded = store.reader(current.runId).read("run")?.pr;
+    const pr = recorded !== undefined ? String(recorded) : await vscode.window.showInputBox({ prompt: "Post the review comment to pull request #", validateInput: (v) => (/^\d+$/.test(v) ? null : "Enter a number"), ignoreFocusOut: true });
+    if (!pr) return;
+    const flow = new PostFlow(current.session, `pr#${pr}`, guardSink(ghSink({ cwd: root })), { linkBase: linkBase(root) });
+    const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: flow.draft });
+    await vscode.window.showTextDocument(doc);
+    draft = { doc, flow, pr };
+    setDraftContext(true);
+    const choice = await vscode.window.showInformationMessage(
+      `Edit the comment if you like, then post it to pull request #${pr} here or with the Post button in the editor's title bar. What is in the editor when you approve is what gets posted.`,
+      "Approve and post",
+    );
+    if (choice === "Approve and post" && draft?.doc === doc) await approveAndPost();
+  };
+
   const open = (runId: string) => {
     const { root, config, store, reviewer } = setup();
     current?.panel.dispose();
@@ -101,6 +156,16 @@ export function activate(context: vscode.ExtensionContext): void {
       findings.update(session);
       threads.refresh(session, root);
       showStatus(run);
+      void sendPreview();
+    };
+    // @spec EXT-POST-007
+    const sendPreview = async () => {
+      try {
+        const html = await vscode.commands.executeCommand<string>("markdown.api.render", session.reviewComment({ linkBase: linkBase(root) }));
+        void panel.webview.postMessage({ type: "preview", html });
+      } catch {
+        // No markdown renderer or no run yet: the preview stays empty.
+      }
     };
     panel.webview.onDidReceiveMessage((m: PanelMessage) =>
       handleMessage(session, {
@@ -110,6 +175,8 @@ export function activate(context: vscode.ExtensionContext): void {
         openAnchor: (a) => void openAnchor(root, a),
         openTerminal: (cardId) => openTerminal(store, runId, session, cardId),
         showLog: () => void showLog(),
+        postComment: () => void postComment(),
+        ready: () => void sendPreview(),
       }, m),
     );
     // @spec EXT-CMD-004, EXT-CMD-007
@@ -203,27 +270,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     // @spec EXT-LOG-002
     vscode.commands.registerCommand("duet.showLog", showLog),
-    // @spec EXT-POST-001, EXT-POST-002, EXT-POST-003
-    vscode.commands.registerCommand("duet.postDecisionLog", async () => {
-      if (!current) return void vscode.window.showInformationMessage("Open a Duet review first.");
-      const { root } = setup();
-      const pr = await vscode.window.showInputBox({ prompt: "Post the decision log to pull request #", validateInput: (v) => (/^\d+$/.test(v) ? null : "Enter a number") });
-      if (!pr) return;
-      const flow = new PostFlow(current.session, `pr#${pr}`, guardSink(ghSink({ cwd: root })));
-      const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: flow.draft });
-      await vscode.window.showTextDocument(doc);
-      const choice = await vscode.window.showInformationMessage(
-        `Post this exact text to pull request #${pr}? Edit it first if you like; what is in the editor when you approve is what gets posted.`,
-        { modal: true },
-        "Approve and post",
-      );
-      if (choice !== "Approve and post") return;
-      flow.edit(doc.getText());
-      flow.approve();
-      const result = await flow.post();
-      if (result.ok) void vscode.window.showInformationMessage(`Posted to pull request #${pr}.`);
-      else void vscode.window.showErrorMessage(`Not posted: ${result.error}`);
-    }),
+    // @spec EXT-POST-001, EXT-POST-002, EXT-POST-003, EXT-POST-005
+    vscode.commands.registerCommand("duet.postReviewComment", postComment),
+    // @spec EXT-POST-008
+    vscode.commands.registerCommand("duet.postReviewComment.approve", approveAndPost),
     // @spec EXT-VIEW-007
     ...(["dismissed", "fixed", "open"] as const).map((state) =>
       vscode.commands.registerCommand(`duet.finding.${state}`, (node: FindingsNode) => {

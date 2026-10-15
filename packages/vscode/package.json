@@ -24,9 +24,15 @@
         "category": "Duet"
       },
       {
-        "command": "duet.postDecisionLog",
-        "title": "Post decision log",
+        "command": "duet.postReviewComment",
+        "title": "Post review comment",
         "category": "Duet"
+      },
+      {
+        "command": "duet.postReviewComment.approve",
+        "title": "Post to pull request",
+        "category": "Duet",
+        "icon": "$(comment)"
       },
       {
         "command": "duet.finding.dismissed",
@@ -78,7 +84,18 @@
           "when": "view == duet.findings && viewItem == finding-open"
         }
       ],
+      "editor/title": [
+        {
+          "command": "duet.postReviewComment.approve",
+          "when": "duet.reviewCommentDraft && resourceScheme == untitled",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "duet.postReviewComment.approve",
+          "when": "duet.reviewCommentDraft"
+        },
         {
           "command": "duet.finding.dismissed",
           "when": "false"

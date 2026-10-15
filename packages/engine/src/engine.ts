@@ -135,7 +135,7 @@ const fileHash = (data: unknown) => sha256(canonicalJson(data));
  * Reviews a change: creates or resumes its run, reuses every stage whose cache key still matches,
  * and runs the rest as two concurrent branches.
  */
-// @spec PIPE-CLI-001, PIPE-CLI-002, PIPE-CLI-005, PIPE-STG-001, PIPE-FAIL-001, PIPE-FAIL-002, PIPE-FAIL-003, PIPE-FAIL-004, PIPE-RES-004, PIPE-PROG-004, PIPE-PROG-005
+// @spec PIPE-CLI-001, PIPE-CLI-002, PIPE-CLI-005, PIPE-CLI-007, PIPE-STG-001, PIPE-FAIL-001, PIPE-FAIL-002, PIPE-FAIL-003, PIPE-FAIL-004, PIPE-RES-004, PIPE-PROG-004, PIPE-PROG-005
 export async function run(opts: RunOptions): Promise<RunSummary> {
   const s = await setup(opts.repoRoot, opts, opts.flags);
   const change = await resolveChange(s, opts, opts.repoRoot, opts.change);
@@ -144,7 +144,7 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
   const release = acquireLock(pipeline.dir);
   try {
     if (change.worktree) s.store.keepSnapshot(runId, change.head);
-    pipeline.initRun({ base: change.base, head: change.head, title: change.title });
+    pipeline.initRun({ base: change.base, head: change.head, title: change.title, pr: change.pr });
     opts.onRun?.(runId, pipeline.dir);
     const progress = (msg: string) => {
       const line = `duet: ${msg}`;

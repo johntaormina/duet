@@ -35,13 +35,25 @@ Design: `review-session-design.md`. "The session" is the review-session library 
 - [x] **SESS-FIND-002**: When the reviewer marks a finding dismissed, fixed, or open, the session shall store that state under the finding's fingerprint in the reviewer's finding-state file.
 - [x] **SESS-FIND-003**: The session shall assign each offered finding to the briefing cohort containing its first anchor's file, or to "other" when no cohort contains it.
 
-## Record and decision log
+## Record and review comment
 
 - [x] **SESS-REC-001**: The session shall write the record after every change the reviewer makes.
 - [x] **SESS-REC-002**: When the reviewer ends a review, the session shall record the end time and the stages not complete at that moment.
 - [x] **SESS-REC-003**: The session shall allow a review to end with cards unanswered.
-- [x] **SESS-REC-004**: The session shall produce a decision log in markdown listing, for each answered card, the question, the chosen option, the rationale, whether it matched Claude's recommendation, and whether it changed after commitment.
-- [x] **SESS-REC-005**: The decision log shall list the unanswered cards and the stages that were not complete.
+- [x] **SESS-REC-004**: The session shall produce a review comment in markdown holding, in order, a summary of the change, a decisions section, and a machine review section.
+- [x] **SESS-REC-005**: When any stage is not complete, the review comment shall list each stage not complete, and a section whose stage is not complete shall name that stage instead of showing its content.
 - [x] **SESS-REC-006**: When the reviewer approves the exact text of a post, the session shall create a signed post holding the target, the text, and the approval time.
 - [x] **SESS-REC-007**: When a sink reports that a signed post was posted, the session shall record the target, the hash of the posted text, the sign-off time, and the posting time in the record.
+- [x] **SESS-REC-009**: The review comment's summary shall show the run title, what the code does from the intent stage, each stated-versus-actual mismatch in a warning callout when there are any, and the number of cards answered out of the deck and the number of findings in the machine review section.
+- [x] **SESS-REC-010**: The review comment's decisions section shall show each card in deck order as one collapsed entry whose visible line holds the card's number, its question in bold, and either the chosen option with whether it agreed with Claude's recommendation or that the card is not answered.
+- [x] **SESS-REC-011**: When a decision entry in the review comment is expanded, it shall show a reference to the card's first anchor, what the code does, why it matters, every option with the chosen one marked, the reviewer's rationale, and whether the answer changed after commitment.
+- [x] **SESS-REC-012**: The review comment's machine review section shall include exactly the findings the session offers the reviewer whose state is open, and state how many other findings the run holds that are not included.
+- [x] **SESS-REC-013**: The review comment's machine review section shall show a table counting its findings by category and severity, with columns for critical, high, medium, and low, a nit column only when a nit is included, and rows for bugs, security, tests, and conventions followed by any other category present.
+- [x] **SESS-REC-014**: The review comment's machine review section shall group its findings by severity, most severe first, as collapsible groups that are open for critical and high and collapsed otherwise, each finding a collapsed entry whose visible line holds its severity marker, title, category, and file and lines.
+- [x] **SESS-REC-015**: When a finding entry in the review comment is expanded, it shall show a reference to the finding's first anchor, its evidence, its suggested fix when present, and its confidence.
+- [x] **SESS-REC-016**: When the machine review section includes no findings, the review comment shall say that no findings met the bar instead of showing the table.
+- [x] **SESS-REC-017**: When the interface supplies a code-link base, the review comment shall render each anchor reference as a link to the anchor's lines at the run's head commit; otherwise it shall render the reference as the file and lines in code style.
+- [x] **SESS-REC-018**: The review comment shall never render a card question, option, or finding title as a markdown heading.
+- [x] **SESS-REC-019**: The review comment shall escape run text placed inside HTML elements, keeping its backtick code spans as code, and shall escape angle brackets outside code spans in run text placed in markdown.
+- [x] **SESS-REC-020**: If the review comment would exceed 65,536 characters, then the session shall remove the expanded details of findings, lowest severity first, and then whole finding entries, lowest severity first, until it fits, keeping the summary, every decision, and the counts table, and shall state how many findings were shortened or left out.
 - [x] **SESS-REC-008**: If a session file fails validation, then the session shall stop writing to it and tell the reviewer that it must be repaired or moved aside.

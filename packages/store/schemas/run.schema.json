@@ -75,6 +75,10 @@
     "title": {
       "type": "string"
     },
+    "pr": {
+      "type": "integer",
+      "minimum": 1
+    },
     "stages": {
       "type": "object",
       "properties": {

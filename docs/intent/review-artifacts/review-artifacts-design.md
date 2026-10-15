@@ -47,7 +47,7 @@ A markdown rendering of the briefing may be produced from `briefing.json` by a p
 
 ## Manifest and Stage Status
 
-`run.json` holds the run identity (run id, base and head commit SHAs in full, review title) and one entry per stage:
+`run.json` holds the run identity (run id, base and head commit SHAs in full, review title, and the pull request number when the change was named as one) and one entry per stage:
 
 | Stage | Output file |
 |---|---|

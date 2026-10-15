@@ -9,7 +9,9 @@ export type PanelMessage =
   | { type: "ask"; cardId: string; question: string }
   | { type: "terminal"; cardId: string }
   | { type: "openAnchor"; anchor: Anchor }
-  | { type: "showLog" };
+  | { type: "showLog" }
+  | { type: "post" }
+  | { type: "ready" };
 
 export interface ControllerHooks {
   post(message: unknown): void;
@@ -19,6 +21,10 @@ export interface ControllerHooks {
   openAnchor(anchor: Anchor): void;
   openTerminal(cardId: string): void;
   showLog(): void;
+  /** Starts the Post review comment flow. */
+  postComment(): void;
+  /** The panel's script has loaded and can receive messages. */
+  ready(): void;
 }
 
 /** Routes every reviewer action from the panel through the review session. */
@@ -59,6 +65,14 @@ export async function handleMessage(session: ReviewSession, hooks: ControllerHoo
       // @spec EXT-VIEW-013
       case "showLog":
         hooks.showLog();
+        return;
+      // @spec EXT-POST-004
+      case "post":
+        hooks.postComment();
+        return;
+      // @spec EXT-POST-007
+      case "ready":
+        hooks.ready();
         return;
     }
   } catch (e) {

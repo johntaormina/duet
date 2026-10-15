@@ -236,7 +236,7 @@ describe("findings", () => {
   });
 });
 
-describe("ending, the decision log, and posting", () => {
+describe("ending, the review comment, and posting", () => {
   // @spec SESS-REC-002, SESS-REC-003
   it("ends with the time and incomplete stages, even with cards unanswered", () => {
     const { session, store } = setup();
@@ -248,20 +248,140 @@ describe("ending, the decision log, and posting", () => {
     expect(rec.answers).toHaveLength(1);
   });
 
-  // @spec SESS-REC-004, SESS-REC-005
-  it("produces a decision log with answers, unanswered cards, and incomplete stages", () => {
-    const { session } = setup();
+  function full(opts: { findings?: ReturnType<typeof fnd>[]; intentStage?: boolean } = {}) {
+    const s = setup();
+    if (opts.intentStage !== false) {
+      s.p.write("intent", { schema_version: "1.0", stated: "Retry uploads", sources: [], observed: "Retries every upload failure.", mismatches: [{ statement: "Also retries 4xx", anchors: [], kind: "unstated" }] });
+      s.p.setStage("intent", { status: "complete" });
+    }
+    s.p.write("findings", { schema_version: "1.0", findings: opts.findings ?? [], coverage: { reviewed: [], skipped: [] }, exploration: { context_gathered: "", budget: "", not_examined: [] } });
+    for (const st of ["context", "briefing", "cards", "findings"] as const) s.p.setStage(st, { status: "complete" });
+    return s;
+  }
+  const fnd = (id: string, severity: "critical" | "high" | "medium" | "low" | "nit", category = "bugs", over: Record<string, unknown> = {}) => ({
+    id, category, severity, confidence: 90, title: `Title ${id}`, anchors: [{ file: "src/upload.ts", commit: HEAD, start_line: 3, end_line: 5 }], evidence: `Evidence ${id}`, suggested_fix: `Fix ${id}`,
+    found_by: ["bugs"], related_cards: [], verification: { status: "confirmed", by: "verifier", notes: "" }, fingerprint: `ffp-${id}`, ...over,
+  });
+
+  // @spec SESS-REC-004, SESS-REC-009
+  it("writes a review comment: summary, then decisions, then machine review", () => {
+    const { session } = full({ findings: [fnd("F1", "high")] });
+    session.commit("D1", 1, "Bounded is safer.");
+    const c = session.reviewComment();
+    const [sum, dec, mach] = [c.indexOf("Retries every upload failure."), c.indexOf("Decisions"), c.indexOf("Machine review")];
+    expect(sum).toBeGreaterThan(-1);
+    expect(sum).toBeLessThan(dec);
+    expect(dec).toBeLessThan(mach);
+    expect(c).toContain("t");
+    expect(c).toMatch(/> \[!WARNING\][\s\S]*Also retries 4xx/);
+    expect(c).toMatch(/1\/2 decisions answered/);
+    expect(c).toMatch(/1 finding/);
+  });
+
+  // @spec SESS-REC-005
+  it("names incomplete stages and does not show their sections as empty", () => {
+    const { session, p } = full({ intentStage: false });
+    p.setStage("findings", { status: "failed", error: "rate limited" });
+    const c = session.reviewComment();
+    expect(c).toMatch(/not complete[\s\S]*intent/i);
+    expect(c).toMatch(/findings stage (is |did )?(not complete|failed)/i);
+    expect(c).not.toMatch(/No findings met/);
+  });
+
+  // @spec SESS-REC-010, SESS-REC-011, SESS-REC-018
+  it("shows each card as a collapsed entry with its answer, and the context when expanded", () => {
+    const { session } = full();
     session.commit("D1", 0, "Keep, the server sends Retry-After.");
     session.reveal("D1");
     session.changeOption("D1", 1, "Changed my mind.");
-    const log = session.decisionLog();
-    expect(log).toContain("Question D1?");
-    expect(log).toContain("Cap");
-    expect(log).toContain("Keep, the server sends Retry-After.");
-    expect(log).toMatch(/Matched Claude's recommendation: yes/);
-    expect(log).toMatch(/Changed after commitment: yes/);
-    expect(log).toMatch(/Unanswered[\s\S]*Question D2\?/);
-    expect(log).toMatch(/Incomplete stages[\s\S]*findings/);
+    const c = session.reviewComment();
+    const d1 = c.slice(c.indexOf("Question D1?") - 200, c.indexOf("Question D2?"));
+    expect(d1).toMatch(/<details>\s*<summary><b>1\. Question D1\?<\/b>/);
+    expect(d1).toMatch(/Cap[\s\S]*agreed with Claude[\s\S]*<\/summary>/);
+    expect(d1).toContain("Loop has no limit.");
+    expect(d1).toContain("Jobs hang.");
+    expect(d1).toMatch(/Keep[\s\S]*\*\*Cap\*\* ← chosen/);
+    expect(d1).toContain("Keep, the server sends Retry-After.");
+    expect(d1).toMatch(/changed after commitment/i);
+    expect(d1).toContain("`src/upload.ts:1-2`");
+    expect(c).toMatch(/2\. Question D2\?[\s\S]*Not answered/);
+    expect(c).not.toMatch(/^#+ .*Question/m);
+  });
+
+  // @spec SESS-REC-012
+  it("includes only open findings the reviewer was offered, and counts the rest", () => {
+    const { session } = full({ findings: [fnd("F1", "high"), fnd("F2", "high", "bugs", { confidence: 40 }), fnd("F3", "medium"), fnd("F4", "low"), fnd("F5", "low", "bugs", { verification: { status: "refuted", by: "v", notes: "" } })] });
+    session.setFindingState("ffp-F3", "dismissed");
+    session.setFindingState("ffp-F4", "fixed");
+    const c = session.reviewComment();
+    expect(c).toContain("Title F1");
+    for (const id of ["F2", "F3", "F4", "F5"]) expect(c).not.toContain(`Title ${id}`);
+    expect(c).toMatch(/4 other findings[^\n]*not included/);
+  });
+
+  // @spec SESS-REC-013, SESS-REC-014, SESS-REC-015
+  it("counts findings by category and severity, groups them by severity, and expands each", () => {
+    const { session } = full({ findings: [fnd("F1", "medium", "tests"), fnd("F2", "critical", "security"), fnd("F3", "high", "bugs"), fnd("F4", "low", "style")] });
+    const c = session.reviewComment();
+    expect(c).toMatch(/\| *\| 🔴 Critical \| 🟠 High \| 🟡 Medium \| 🟢 Low \|\n/);
+    expect(c).not.toContain("⚪ Nit |");
+    const rows = c.split("\n").filter((l) => /^\| (🐛|🔒|🧪|📐|\S)/.test(l) && !l.includes("Critical") && !l.includes(":-"));
+    expect(rows.map((r) => r.split("|")[1].trim())).toEqual(["🐛 Bugs", "🔒 Security", "🧪 Tests", "📐 Conventions", "style"]);
+    expect(rows[1]).toMatch(/\| 1 \| · \| · \| · \|$/);
+    const order = ["🔴 Critical (1)", "🟠 High (1)", "🟡 Medium (1)", "🟢 Low (1)"].map((g) => c.indexOf(g));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(c).toMatch(/<details open>\s*<summary><b>🔴 Critical \(1\)/);
+    expect(c).toMatch(/<details open>\s*<summary><b>🟠 High \(1\)/);
+    expect(c).toMatch(/<details>\s*<summary><b>🟡 Medium \(1\)/);
+    expect(c).toMatch(/<summary>🔴 <b>Title F2<\/b> · security · <code>upload\.ts:3-5<\/code><\/summary>[\s\S]*Evidence F2[\s\S]*Fix F2[\s\S]*Confidence 90/);
+  });
+
+  // @spec SESS-REC-013
+  it("adds a nit column only when a nit is included", () => {
+    const { session } = full({ findings: [fnd("F1", "nit")] });
+    expect(session.reviewComment()).toContain("| ⚪ Nit |");
+  });
+
+  // @spec SESS-REC-016
+  it("says no findings met the bar instead of showing an empty table", () => {
+    const c = full().session.reviewComment();
+    expect(c).toMatch(/No findings met/);
+    expect(c).not.toContain("🔴 Critical |");
+  });
+
+  // @spec SESS-REC-017
+  it("links anchors to the head commit when given a code-link base", () => {
+    const { session } = full({ findings: [fnd("F1", "high")] });
+    const c = session.reviewComment({ linkBase: "https://github.com/o/r" });
+    expect(c).toContain(`https://github.com/o/r/blob/${HEAD}/src/upload.ts#L3-L5`);
+    expect(c).toContain(`https://github.com/o/r/blob/${HEAD}/src/upload.ts#L1-L2`);
+    expect(session.reviewComment()).not.toContain("https://");
+  });
+
+  // @spec SESS-REC-019
+  it("escapes run text so it cannot break the comment's structure", () => {
+    const { session } = full({ findings: [fnd("F1", "high", "bugs", { title: "Closes </details> early with `a<b`", evidence: "x <img src=y> and `<b>`" })] });
+    const c = session.reviewComment();
+    expect(c).toContain("Closes &lt;/details&gt; early with <code>a&lt;b</code>");
+    expect(c).toContain("x &lt;img src=y&gt; and `<b>`");
+  });
+
+  // @spec SESS-REC-020
+  it("shortens findings, lowest severity first, to fit GitHub's comment limit", () => {
+    const big = "y".repeat(20_000);
+    const { session } = full({ findings: [fnd("F1", "critical", "bugs", { evidence: big }), fnd("F2", "low", "bugs", { evidence: big }), fnd("F3", "low", "tests", { evidence: big }), fnd("F4", "medium", "bugs", { evidence: big })] });
+    const c = session.reviewComment();
+    expect(c.length).toBeLessThanOrEqual(65_536);
+    expect(c).toContain("Question D1?");
+    expect(c).toContain("Title F1");
+    const count = (t: string) => t.split(big).length - 1;
+    expect(count(c)).toBe(3);
+    const withDetail = ["F1", "F2", "F3", "F4"].filter((id) => count(c.slice(c.indexOf(`Title ${id}`), c.indexOf("</details>", c.indexOf(`Title ${id}`) + 1 + c.slice(c.indexOf(`Title ${id}`)).indexOf("</summary>")))) === 1);
+    expect(withDetail).toContain("F1");
+    expect(withDetail).toContain("F4");
+    expect(withDetail).toHaveLength(3);
+    expect(["F2", "F3"].every((id) => c.includes(`Title ${id}`))).toBe(true);
+    expect(c).toMatch(/1 finding shortened/);
   });
 
   // @spec SESS-REC-006, SESS-REC-007

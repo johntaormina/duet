@@ -15,7 +15,7 @@ Two shapes govern it. The human layer is a short serial chain on the reviewer's 
 
 The engine exposes the `duet` command with three operations:
 
-- **run**: review a change. The change is named as a pull request (resolved through the source adapter), a base and head ref, or the working tree against a base. An optional author statement (a line or two on what the change does and why) and an optional agent plan or transcript file can be supplied; both become intent sources. It creates or resumes the run and executes every stage that is not reusable.
+- **run**: review a change. The change is named as a pull request (resolved through the source adapter), a base and head ref, or the working tree against a base. An optional author statement (a line or two on what the change does and why) and an optional agent plan or transcript file can be supplied; both become intent sources. It creates or resumes the run, recording the pull request number in `run.json` when the change was named as one, and executes every stage that is not reusable.
 - **ask**: answer a reviewer's question about one card in an existing run (see *Questions*).
 - **clean**: remove run directories, their head worktrees, and their snapshot refs, for runs older than a given age or named explicitly.
 

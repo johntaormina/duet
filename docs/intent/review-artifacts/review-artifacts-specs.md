@@ -12,6 +12,7 @@ Design: `review-artifacts-design.md`. "The artifact store" is the shared library
 - [x] **ART-RUN-006**: When the artifact store creates the root directory, it shall write a `.gitignore` inside the root that ignores the root's contents, unless configuration marks the root as tracked.
 - [x] **ART-RUN-007**: When snapshotting the working tree, the artifact store shall create the snapshot commit with a fixed author, committer, timestamp, and message, so the same base and working-tree contents always produce the same snapshot SHA and the same run id.
 - [x] **ART-RUN-008**: The artifact store's pipeline writer shall append progress lines to `engine.log` in the run directory, one complete line per entry, never rewriting earlier lines.
+- [x] **ART-RUN-009**: The artifact store shall accept an optional pull request number in `run.json`'s run identity and preserve it when the run is resumed.
 
 ## Writing, validation, and versioning
 
