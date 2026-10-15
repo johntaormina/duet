@@ -52,14 +52,24 @@ export function guardSink(inner: Sink): GuardedSink {
 
 /** Posts a comment on a GitHub pull request. Targets look like `pr#123`. Never submits a review. */
 // @spec ADPT-SINK-003, ADPT-SINK-004
-export function ghSink(opts: { exec?: Exec; cwd?: string } = {}): Sink {
+export function ghSink(opts: { exec?: Exec; cwd?: string; retries?: number; delayMs?: number } = {}): Sink {
   const exec = opts.exec ?? defaultExec;
+  const retries = opts.retries ?? 3;
+  const delayMs = opts.delayMs ?? 1000;
   return {
     name: "gh",
     async send(target, text) {
       const m = /^pr#(\d+)$/.exec(target);
       if (!m) throw new Error(`the gh sink cannot post to ${target}`);
-      await exec("gh", ["pr", "comment", m[1], "--body-file", "-"], { cwd: opts.cwd, input: text });
+      // GitHub occasionally returns 502s under load; retry with exponential backoff.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await exec("gh", ["pr", "comment", m[1], "--body-file", "-"], { cwd: opts.cwd, input: text });
+        } catch (e) {
+          if (attempt > retries) throw e;
+          await new Promise((r) => setTimeout(r, delayMs * 2 ** attempt));
+        }
+      }
     },
   };
 }
