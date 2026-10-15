@@ -13,6 +13,8 @@ export interface ClaudeRequest {
   timeoutMs: number;
   /** Extra arguments from configuration, appended to every call. */
   extraArgs?: string[];
+  /** Hears each retry the CLI makes itself after a rate limit or overload, with its delay. */
+  onRateLimitRetry?: (delayMs: number) => void;
 }
 
 export interface ClaudeResponse {
@@ -49,8 +51,14 @@ export function cliArgs(req: ClaudeRequest): string[] {
   return args;
 }
 
-/** Invokes the Claude CLI in headless mode, streaming JSON events so partial output survives a timeout. */
-// @spec PIPE-CALL-001
+/** True for a CLI `api_retry` event caused by a rate limit or overload, which the CLI waits out itself. */
+const isRateLimitRetry = (ev: { error_status?: number; error?: string }) => ev.error_status === 429 || ev.error_status === 529 || /rate.?limit|overload/i.test(ev.error ?? "");
+
+/**
+ * Invokes the Claude CLI in headless mode, streaming JSON events so partial output survives a timeout.
+ * Time the CLI spends waiting out a rate limit does not count toward the timeout.
+ */
+// @spec PIPE-CALL-001, PIPE-CALL-010
 export const cliRunner: ClaudeRunner = (req) =>
   new Promise((resolve, reject) => {
     const child = spawn("claude", cliArgs(req), { cwd: req.cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -59,10 +67,12 @@ export const cliRunner: ClaudeRunner = (req) =>
     let result: { subtype?: string; is_error?: boolean; result?: string } | null = null;
     let stderr = "";
     let timedOut = false;
-    const timer = setTimeout(() => {
+    let deadline = Date.now() + req.timeoutMs;
+    const expire = () => {
       timedOut = true;
       child.kill("SIGTERM");
-    }, req.timeoutMs);
+    };
+    let timer = setTimeout(expire, req.timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
       let nl: number;
@@ -76,6 +86,13 @@ export const cliRunner: ClaudeRunner = (req) =>
             const text = (ev.message?.content ?? []).filter((c: { type: string }) => c.type === "text").map((c: { text: string }) => c.text).join("");
             if (text) lastText = text;
           } else if (ev.type === "result") result = ev;
+          else if (ev.type === "system" && ev.subtype === "api_retry" && isRateLimitRetry(ev)) {
+            const delay = Number(ev.retry_delay_ms) || 0;
+            deadline += delay;
+            clearTimeout(timer);
+            timer = setTimeout(expire, Math.max(0, deadline - Date.now()));
+            req.onRateLimitRetry?.(delay);
+          }
         } catch {
           // Non-JSON noise on stdout is ignored.
         }

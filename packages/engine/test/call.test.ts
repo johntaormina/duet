@@ -1,9 +1,9 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssetResolver, DEFAULT_CONFIG } from "@duet/adapters";
 import { describe, expect, it } from "vitest";
-import { callJson, cliArgs, extractJson, InvalidOutputError, loadPrompt, RateLimitError, Scheduler } from "../src/index.ts";
+import { callJson, cliArgs, cliRunner, extractJson, InvalidOutputError, loadPrompt, RateLimitError, Scheduler } from "../src/index.ts";
 import { CORE_ASSETS } from "../src/engine.ts";
 import { fakeClaude, noSleep } from "./kit.ts";
 
@@ -157,3 +157,47 @@ describe("progress", () => {
   });
 });
 
+
+/** Puts a fake `claude` on PATH that prints the given stream-json lines, sleeping where a line is a number of ms. */
+async function withFakeCli<T>(script: (string | number)[], fn: () => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "duet-fakecli-"));
+  const body = script.map((l) => (typeof l === "number" ? `await new Promise((r) => setTimeout(r, ${l}));` : `process.stdout.write(${JSON.stringify(l + "\n")});`)).join("\n");
+  writeFileSync(join(dir, "claude"), `#!/usr/bin/env node\nprocess.stdin.resume();\n${body}\n`);
+  chmodSync(join(dir, "claude"), 0o755);
+  const old = process.env.PATH;
+  process.env.PATH = `${dir}:${old}`;
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = old;
+  }
+}
+
+describe("rate limits inside a CLI call", () => {
+  const retry = (status: number, delay: number) => JSON.stringify({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: delay, error_status: status, error: status === 429 ? "rate_limit" : "overloaded" });
+  const result = JSON.stringify({ type: "result", subtype: "success", is_error: false, result: '{"ok":true}' });
+
+  // @spec PIPE-CALL-010
+  it("does not count the CLI's rate-limit retry delays toward the call's timeout", async () => {
+    const res = await withFakeCli([retry(429, 600), 700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 400 }));
+    expect(res).toEqual({ text: '{"ok":true}', truncated: false });
+  });
+
+  // @spec PIPE-CALL-010
+  it("still times out a call that is slow for reasons other than rate limits", async () => {
+    const slow = withFakeCli([JSON.stringify({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10, retry_delay_ms: 600, error_status: 500, error: "server_error" }), 700, result], () => cliRunner({ name: "p", prompt: "x", cwd: "/tmp", tools: "none", timeoutMs: 400 }));
+    await expect(slow).rejects.toThrow(/timed out/);
+  });
+
+  // @spec PIPE-CALL-011
+  it("reports the stage as waiting on a rate limit while the CLI retries", async () => {
+    const waits: (string | null)[] = [];
+    const lines: string[] = [];
+    await withFakeCli([retry(529, 300), 350, result], () =>
+      callJson(env(cliRunner, { onWait: (d) => waits.push(d), progress: (l) => lines.push(l), stage: "briefing", now: () => new Date("2026-10-15T12:00:00Z") }), { prompt: "p", vars: { thing: "x" }, branch: "human" }),
+    );
+    expect(waits[0]).toBe("waiting on a rate limit until 12:00:00 UTC");
+    expect(waits.at(-1)).toBeNull();
+    expect(lines.some((l) => /rate limited; claude retries at 12:00:00 UTC/.test(l))).toBe(true);
+  });
+});
