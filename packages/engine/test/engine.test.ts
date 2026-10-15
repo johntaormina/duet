@@ -305,3 +305,47 @@ describe("command line and clean", () => {
     expect(git(r.repo.dir, "worktree", "list")).not.toContain(r.summary.runId);
   });
 });
+
+describe("progress log", () => {
+  // @spec PIPE-PROG-004, PIPE-PROG-005
+  it("reports stage transitions and calls to the caller and appends them, timestamped, to engine.log", async () => {
+    const lines: string[] = [];
+    const r = await review({}, fixtureRepo(), { onProgress: (l) => lines.push(l) });
+    expect(lines.every((l) => l.startsWith("duet: "))).toBe(true);
+    expect(lines).toContain("duet: intent: running");
+    expect(lines).toContain("duet: briefing: claude started (default model)");
+    expect(lines.some((l) => /^duet: briefing: claude done in \d+s$/.test(l))).toBe(true);
+    expect(lines.some((l) => /^duet: findings: specialist-bugs: claude started/.test(l))).toBe(true);
+    expect(lines.some((l) => /^duet: cards: complete in \d+s$/.test(l))).toBe(true);
+    const log = readFileSync(join(r.summary.runDir, "engine.log"), "utf8").trim().split("\n");
+    expect(log.map((l) => l.replace(/^\S+ /, ""))).toEqual(lines);
+    expect(log[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z duet: /);
+    const again: string[] = [];
+    await review({}, r.repo, { onProgress: (l) => again.push(l) });
+    expect(again).toContain("duet: intent: reused");
+  });
+
+  // @spec PIPE-PROG-004
+  it("reports a failed stage with its error", async () => {
+    const lines: string[] = [];
+    await review({ briefing: () => "not json" }, fixtureRepo(), { onProgress: (l) => lines.push(l) });
+    expect(lines.some((l) => /^duet: briefing: failed: /.test(l))).toBe(true);
+    expect(lines).toContain("duet: cards: failed: upstream stage briefing failed");
+  });
+
+  // @spec PIPE-CLI-006, PIPE-PROG-005
+  it("announces the run on its own standard-error line and writes progress lines there too", async () => {
+    const repo = fixtureRepo();
+    const err: string[] = [];
+    const out: string[] = [];
+    const fake = fakeClaude(happyHandlers());
+    const code = await main(["run", "--base", "main", "--head", "feature", "--repo", repo.dir], { write: (s: string) => void out.push(s) } as never, { write: (s: string) => void err.push(s) } as never, { runner: fake.runner, sleep: noSleep, userConfigDir });
+    const text = err.join("");
+    expect(code).toBe(0);
+    expect(text).toMatch(/^duet-run [0-9a-f]{16} \S+$/m);
+    expect(text.split("\n")[0]).toMatch(/^duet-run /);
+    expect(text).toMatch(/^duet: briefing: claude started/m);
+    expect(JSON.parse(out.join("")).runId).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+

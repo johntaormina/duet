@@ -1,22 +1,24 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, type FSWatcher, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { ghSink, guardSink, loadConfig } from "@duet/adapters";
 import { reviewerIdentity, ReviewSession } from "@duet/session";
-import { type Anchor, openStore, type Store } from "@duet/store";
+import { type Anchor, openStore, type RunManifest, type Store } from "@duet/store";
 import { locateAnchor } from "./anchors.ts";
-import { engineExitMessage, runArgs, type StartAnswers, startEngine, startQuestions } from "./engineProcess.ts";
+import { engineExitMessage, PLAN_CHOICES, PLAN_PROMPT, runArgs, type StartAnswers, startEngine, startQuestions } from "./engineProcess.ts";
 import { buildFindingsTree, findingActions, type FindingsNode } from "./findings.ts";
 import { handleMessage, type PanelMessage } from "./panel/controller.ts";
 import { renderPanel } from "./panel/html.ts";
 import { buildPanelModel } from "./panel/model.ts";
 import { PostFlow } from "./post.ts";
+import { progressText, runStages, stageProgress } from "./progress.ts";
 import { listRuns, watchRun } from "./runs.ts";
 import { terminalLaunch } from "./terminal.ts";
 
 interface OpenReview {
   runId: string;
+  runDir: string;
   session: ReviewSession;
   panel: vscode.WebviewPanel;
   refresh(): void;
@@ -35,8 +37,15 @@ function nodePath(): string {
 export function activate(context: vscode.ExtensionContext): void {
   const cli = join(context.extensionPath, "dist", "engine", "duet.mjs");
   const findings = new FindingsProvider();
-  const comments = vscode.comments.createCommentController("duet", "Duet");
-  context.subscriptions.push(comments, vscode.window.registerTreeDataProvider("duet.findings", findings));
+  const controller = vscode.comments.createCommentController("duet", "Duet");
+  const threads = createCommentThreads(controller);
+  const log = vscode.window.createOutputChannel("Duet");
+  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+  status.command = "duet.showLog";
+  status.tooltip = "Show Duet's log";
+  /** Runs whose engine this window started; their log is the output channel. */
+  const startedHere = new Set<string>();
+  context.subscriptions.push(controller, threads, log, status, vscode.window.registerTreeDataProvider("duet.findings", findings));
 
   const setup = () => {
     const root = repoRoot();
@@ -44,6 +53,21 @@ export function activate(context: vscode.ExtensionContext): void {
     const config = loadConfig({ repoRoot: root });
     const store = openStore({ repoRoot: root, root: config.root, tracked: config.tracked });
     return { root, config, store, reviewer: reviewerIdentity(root, config.reviewer) };
+  };
+
+  // @spec EXT-LOG-003
+  const showStatus = (run: RunManifest | null) => {
+    if (!run) return void status.hide();
+    status.text = `Duet: ${progressText(stageProgress(runStages(run)))}`;
+    status.show();
+  };
+
+  // @spec EXT-LOG-002
+  const showLog = async () => {
+    if (!current || startedHere.has(current.runId)) return void log.show(true);
+    const path = join(current.runDir, "engine.log");
+    if (!existsSync(path)) return void vscode.window.showInformationMessage("This review has no engine log yet.");
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(path), { preview: true });
   };
 
   const open = (runId: string) => {
@@ -62,12 +86,21 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     });
     const panel = vscode.window.createWebviewPanel("duet.review", "Duet review", vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+    let rendered = "";
     const refresh = () => {
       const reader = store.reader(runId);
-      panel.title = `Duet: ${reader.read("run")?.title ?? runId}`;
-      panel.webview.html = renderPanel(buildPanelModel(reader, session, reviewer), randomBytes(16).toString("hex"), panel.webview.cspSource);
+      const run = reader.read("run");
+      panel.title = `Duet: ${run?.title ?? runId}`;
+      const model = buildPanelModel(reader, session, reviewer);
+      // @spec EXT-VIEW-017
+      const content = renderPanel(model, "", panel.webview.cspSource);
+      if (content !== rendered) {
+        rendered = content;
+        panel.webview.html = renderPanel(model, randomBytes(16).toString("hex"), panel.webview.cspSource);
+      }
       findings.update(session);
-      refreshComments(comments, store, runId, session, root);
+      threads.refresh(session, root);
+      showStatus(run);
     };
     panel.webview.onDidReceiveMessage((m: PanelMessage) =>
       handleMessage(session, {
@@ -76,20 +109,24 @@ export function activate(context: vscode.ExtensionContext): void {
         askReason: () => Promise.resolve(vscode.window.showInputBox({ prompt: "Why are you changing your answer?", ignoreFocusOut: true })),
         openAnchor: (a) => void openAnchor(root, a),
         openTerminal: (cardId) => openTerminal(store, runId, session, cardId),
+        showLog: () => void showLog(),
       }, m),
     );
     // @spec EXT-CMD-004, EXT-CMD-007
     const watcher = watchRun(store.runDir(runId), refresh);
     panel.onDidDispose(() => {
       watcher.close();
-      if (current?.panel === panel) current = null;
+      if (current?.panel === panel) {
+        current = null;
+        status.hide();
+      }
     });
-    current = { runId, session, panel, refresh };
+    current = { runId, runDir: store.runDir(runId), session, panel, refresh };
     refresh();
   };
 
   context.subscriptions.push(
-    // @spec EXT-CMD-001, EXT-CMD-002, EXT-CMD-005, EXT-CMD-008, EXT-CMD-009
+    // @spec EXT-CMD-001, EXT-CMD-002, EXT-CMD-005, EXT-CMD-008, EXT-CMD-009, EXT-CMD-010, EXT-CMD-011, EXT-LOG-001, EXT-LOG-004
     vscode.commands.registerCommand("duet.startReview", async () => {
       const { root, store } = setup();
       const kind = await vscode.window.showQuickPick(
@@ -116,15 +153,38 @@ export function activate(context: vscode.ExtensionContext): void {
             ignoreFocusOut: true,
           });
         } else if (q === "plan") {
-          const pick = await vscode.window.showQuickPick(["No agent plan", "Choose an agent plan or transcript file…"], { placeHolder: "Include an agent's plan or transcript? (optional)" });
-          if (pick?.startsWith("Choose")) answers.planFile = (await vscode.window.showOpenDialog({ canSelectMany: false }))?.[0]?.fsPath;
+          const pick = await vscode.window.showQuickPick([PLAN_CHOICES.skip, PLAN_CHOICES.choose], { placeHolder: PLAN_PROMPT });
+          if (pick === PLAN_CHOICES.choose) answers.planFile = (await vscode.window.showOpenDialog({ canSelectMany: false }))?.[0]?.fsPath;
         }
       }
       const change = kind.choice === "pr" ? { kind: "pr" as const, number: answers.pr! } : kind.choice === "worktree" ? { kind: "worktree" as const, base: answers.base! } : { kind: "branch" as const, base: answers.base! };
-      const handle = startEngine(nodePath(), cli, runArgs({ change, statement: answers.statement, planFile: answers.planFile }), root, (runId) => open(runId));
-      vscode.window.setStatusBarMessage("Duet: reviewing…", handle.done);
-      const res = await handle.done;
-      const runId = /"runId":"([^"]+)"/.exec(res.stdout)?.[1];
+      const args = runArgs({ change, statement: answers.statement, planFile: answers.planFile });
+      log.appendLine(`Starting: duet ${args.join(" ")}`);
+      let announced: string | undefined;
+      const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Duet review" }, async (progress) => {
+        let reported = 0;
+        let watcher: FSWatcher | undefined;
+        const report = (runId: string) => {
+          const run = store.reader(runId).read("run");
+          if (!run) return;
+          const p = stageProgress(runStages(run));
+          progress.report({ message: progressText(p), increment: p.percent - reported });
+          reported = p.percent;
+        };
+        const handle = startEngine(nodePath(), cli, args, root, (runId, runDir) => {
+          announced = runId;
+          startedHere.add(runId);
+          open(runId);
+          report(runId);
+          watcher = watchRun(runDir, (f) => f === "run.json" && report(runId));
+        }, (line) => log.appendLine(line));
+        try {
+          return await handle.done;
+        } finally {
+          watcher?.close();
+        }
+      });
+      const runId = /"runId":"([^"]+)"/.exec(res.stdout)?.[1] ?? announced;
       const message = engineExitMessage(res.code, res.stderr, runId ? store.reader(runId).read("run") : null);
       if (message && res.code !== 1) void vscode.window.showErrorMessage(message);
       else if (message) void vscode.window.showWarningMessage(message);
@@ -141,6 +201,8 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       if (pick) open(pick.runId);
     }),
+    // @spec EXT-LOG-002
+    vscode.commands.registerCommand("duet.showLog", showLog),
     // @spec EXT-POST-001, EXT-POST-002, EXT-POST-003
     vscode.commands.registerCommand("duet.postDecisionLog", async () => {
       if (!current) return void vscode.window.showInformationMessage("Open a Duet review first.");
@@ -197,26 +259,43 @@ function openTerminal(store: Store, runId: string, session: ReviewSession, cardI
   vscode.window.createTerminal({ name: `Duet: ${card.question.slice(0, 40)}`, cwd: launch.cwd, shellPath: launch.command, shellArgs: launch.args }).show();
 }
 
-// @spec EXT-VIEW-008
-export function refreshComments(controller: vscode.CommentController, store: Store, runId: string, session: ReviewSession, root: string): void {
-  (controller as unknown as { __threads?: vscode.CommentThread[] }).__threads?.forEach((t) => t.dispose());
-  const threads: vscode.CommentThread[] = [];
-  const add = (a: Anchor, body: string) => {
-    const path = join(root, a.file);
-    if (!existsSync(path)) return;
-    const { start, end } = locateAnchor(readFileSync(path, "utf8"), a);
-    const thread = controller.createCommentThread(vscode.Uri.file(path), new vscode.Range(start - 1, 0, end - 1, 0), [
-      { body: new vscode.MarkdownString(body), mode: vscode.CommentMode.Preview, author: { name: "Duet" } },
-    ]);
-    thread.canReply = false;
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
-    threads.push(thread);
+/**
+ * The read-only comment threads at card and finding anchors. The set is owned here, not stored on the
+ * controller (VS Code's API objects are frozen); each thread is tracked as soon as it exists, and every
+ * refresh disposes the previous set first, so threads never accumulate.
+ */
+// @spec EXT-VIEW-008, EXT-VIEW-014, EXT-VIEW-015
+export function createCommentThreads(controller: vscode.CommentController): { refresh(session: ReviewSession, root: string): void; dispose(): void } {
+  let threads: vscode.CommentThread[] = [];
+  const dispose = () => {
+    const old = threads;
+    threads = [];
+    for (const t of old) t.dispose();
   };
-  for (const c of session.cards()) for (const a of c.anchors) add(a, `**Decision:** ${c.question}\n\nAnswer it in the Duet review panel.`);
-  for (const f of session.findings()) add(f.anchors[0], `**${f.severity} finding:** ${f.title}\n\n${f.evidence}`);
-  (controller as unknown as { __threads?: vscode.CommentThread[] }).__threads = threads;
-  void store;
-  void runId;
+  const refresh = (session: ReviewSession, root: string) => {
+    dispose();
+    const seen = new Set<string>();
+    const texts = new Map<string, string>();
+    const add = (a: Anchor | undefined, body: string) => {
+      if (!a) return;
+      const path = join(root, a.file);
+      if (!texts.has(path)) texts.set(path, existsSync(path) ? readFileSync(path, "utf8") : "");
+      if (!existsSync(path)) return;
+      const { start, end } = locateAnchor(texts.get(path)!, a);
+      const key = JSON.stringify([path, start, end, body]);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const thread = controller.createCommentThread(vscode.Uri.file(path), new vscode.Range(start - 1, 0, end - 1, 0), [
+        { body: new vscode.MarkdownString(body), mode: vscode.CommentMode.Preview, author: { name: "Duet" } },
+      ]);
+      threads.push(thread);
+      thread.canReply = false;
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+    };
+    for (const c of session.cards()) for (const a of c.anchors) add(a, `**Decision:** ${c.question}\n\nAnswer it in the Duet review panel.`);
+    for (const f of session.findings()) add(f.anchors[0], `**${f.severity} finding:** ${f.title}\n\n${f.evidence}`);
+  };
+  return { refresh, dispose };
 }
 
 class FindingsProvider implements vscode.TreeDataProvider<FindingsNode> {

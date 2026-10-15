@@ -8,7 +8,8 @@ export type PanelMessage =
   | { type: "change"; cardId: string; option?: number; reason?: string }
   | { type: "ask"; cardId: string; question: string }
   | { type: "terminal"; cardId: string }
-  | { type: "openAnchor"; anchor: Anchor };
+  | { type: "openAnchor"; anchor: Anchor }
+  | { type: "showLog" };
 
 export interface ControllerHooks {
   post(message: unknown): void;
@@ -17,6 +18,7 @@ export interface ControllerHooks {
   askReason(cardId: string): Promise<string | undefined>;
   openAnchor(anchor: Anchor): void;
   openTerminal(cardId: string): void;
+  showLog(): void;
 }
 
 /** Routes every reviewer action from the panel through the review session. */
@@ -53,6 +55,10 @@ export async function handleMessage(session: ReviewSession, hooks: ControllerHoo
         return;
       case "openAnchor":
         hooks.openAnchor(m.anchor);
+        return;
+      // @spec EXT-VIEW-013
+      case "showLog":
+        hooks.showLog();
         return;
     }
   } catch (e) {

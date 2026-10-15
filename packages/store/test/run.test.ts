@@ -86,4 +86,13 @@ describe("run directory", () => {
     writeFileSync(join(repo, "a.txt"), "changed again\n");
     expect(snapshotWorkingTree(repo, ".duet")).not.toBe(first);
   });
+
+  // @spec ART-RUN-008
+  it("appends progress lines to engine.log without rewriting earlier lines", () => {
+    const repo = tempRepo();
+    const p = openStore({ repoRoot: repo }).pipeline("r1");
+    p.appendLog("first");
+    p.appendLog("second\n");
+    expect(readFileSync(join(p.dir, "engine.log"), "utf8")).toBe("first\nsecond\n");
+  });
 });

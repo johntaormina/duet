@@ -7,13 +7,15 @@ import { ReviewSession } from "@duet/session";
 import { cardHash, openStore, type Card } from "@duet/store";
 import { describe, expect, it } from "vitest";
 import { locateAnchor } from "../src/anchors.ts";
-import { engineExitMessage, runArgs, startEngine, startQuestions } from "../src/engineProcess.ts";
-import { refreshComments } from "../src/extension.ts";
+import { engineExitMessage, PLAN_CHOICES, PLAN_PROMPT, runArgs, startEngine, startQuestions } from "../src/engineProcess.ts";
+import * as vscode from "vscode";
+import { activate, createCommentThreads } from "../src/extension.ts";
 import { buildFindingsTree, findingActions } from "../src/findings.ts";
 import { handleMessage, type ControllerHooks } from "../src/panel/controller.ts";
-import { renderPanel } from "../src/panel/html.ts";
+import { CLIENT, renderPanel } from "../src/panel/html.ts";
 import { buildPanelModel, SPLIT_BANNER, type PanelModel, type Placeholder } from "../src/panel/model.ts";
 import { PostFlow } from "../src/post.ts";
+import { progressText, stageProgress } from "../src/progress.ts";
 import { listRuns, watchRun } from "../src/runs.ts";
 import { terminalLaunch } from "../src/terminal.ts";
 
@@ -148,7 +150,7 @@ describe("panel controller", () => {
   function hooks() {
     const posted: unknown[] = [];
     let refreshed = 0;
-    const h: ControllerHooks = { post: (m) => void posted.push(m), refresh: () => void refreshed++, askReason: async () => "Changed my mind.", openAnchor: () => {}, openTerminal: () => {} };
+    const h: ControllerHooks = { post: (m) => void posted.push(m), refresh: () => void refreshed++, askReason: async () => "Changed my mind.", openAnchor: () => {}, openTerminal: () => {}, showLog: () => {} };
     return { h, posted, refreshes: () => refreshed };
   }
 
@@ -194,6 +196,23 @@ describe("panel controller", () => {
   });
 });
 
+interface FakeThread { body: string; canReply?: boolean; disposed: boolean; dispose(): void }
+
+/** A comment controller like VS Code's: a frozen object that cannot hold extra properties. */
+function fakeController(failWhen: () => boolean = () => false) {
+  const threads: FakeThread[] = [];
+  const controller = Object.freeze({
+    createCommentThread: (_u: unknown, _r: unknown, comments: { body: { value: string } }[]) => {
+      if (failWhen()) throw new Error("flaky controller");
+      const t: FakeThread = { body: comments[0].body.value, canReply: true, disposed: false, dispose() { t.disposed = true; } };
+      threads.push(t);
+      return t;
+    },
+    dispose() {},
+  });
+  return { controller, threads, live: () => threads.filter((t) => !t.disposed) };
+}
+
 describe("findings", () => {
   const f = (id: string, cohort: string, severity: string, state = "open") => ({ id, cohort, severity, state, title: id, fingerprint: id, anchors: [anchor("a.ts")] }) as never;
 
@@ -218,11 +237,39 @@ describe("findings", () => {
     mkdirSync(join(s.repo, "src"), { recursive: true });
     writeFileSync(join(s.repo, "src/upload.ts"), "a\nb\nc\nd\n");
     s.p.write("findings", { schema_version: "1.0", findings: [{ id: "F1", category: "bug", severity: "high", confidence: 90, title: "Unbounded", anchors: [anchor("src/upload.ts", 1, 1)], evidence: "e", found_by: ["bugs"], related_cards: [], verification: { status: "confirmed", by: "verifier", notes: "" }, fingerprint: "ffp1" }], coverage: { reviewed: [], skipped: [] }, exploration: { context_gathered: "", budget: "", not_examined: [] } });
-    const threads: { canReply?: boolean; body: string; disposed?: boolean }[] = [];
-    const controller = { createCommentThread: (_u: unknown, _r: unknown, comments: { body: { value: string } }[]) => { const t = { body: comments[0].body.value, canReply: true, dispose() { (this as { disposed?: boolean }).disposed = true; } }; threads.push(t); return t; } };
-    refreshComments(controller as never, s.store, "r1", s.session, s.repo);
+    const { controller, threads } = fakeController();
+    createCommentThreads(controller as never).refresh(s.session, s.repo);
     expect(threads.map((t) => t.body)).toEqual([expect.stringMatching(/Decision:.*Question D1/), expect.stringMatching(/Decision:.*Question D2/), expect.stringMatching(/high finding:.*Unbounded/)]);
     expect(threads.every((t) => t.canReply === false)).toBe(true);
+  });
+
+  // @spec EXT-VIEW-014
+  it("never accumulates threads across refreshes, even on a frozen controller or after a refresh that failed partway", () => {
+    const s = setup();
+    mkdirSync(join(s.repo, "src"), { recursive: true });
+    writeFileSync(join(s.repo, "src/upload.ts"), "a\nb\nc\nd\n");
+    const { controller, live } = fakeController();
+    const comments = createCommentThreads(controller as never);
+    for (let i = 0; i < 5; i++) comments.refresh(s.session, s.repo);
+    expect(live()).toHaveLength(2);
+    let calls = 0;
+    const flaky = fakeController(() => ++calls === 2);
+    const c2 = createCommentThreads(flaky.controller as never);
+    expect(() => c2.refresh(s.session, s.repo)).toThrow(/flaky/);
+    c2.refresh(s.session, s.repo);
+    expect(flaky.live()).toHaveLength(2);
+    c2.dispose();
+    expect(flaky.live()).toHaveLength(0);
+  });
+
+  // @spec EXT-VIEW-015
+  it("shows one thread per distinct file, lines, and text", () => {
+    const s = setup({ cards: [card("D1", "high", "S1", { anchors: [anchor("src/upload.ts"), anchor("src/upload.ts")] }), card("D2", "low", "S2", { anchors: [anchor("src/upload.ts")] })] });
+    mkdirSync(join(s.repo, "src"), { recursive: true });
+    writeFileSync(join(s.repo, "src/upload.ts"), "a\nb\nc\nd\n");
+    const { controller, live } = fakeController();
+    createCommentThreads(controller as never).refresh(s.session, s.repo);
+    expect(live().map((t) => t.body)).toEqual([expect.stringMatching(/Question D1/), expect.stringMatching(/Question D2/)]);
   });
 });
 
@@ -284,6 +331,24 @@ describe("starting and opening reviews", () => {
     const res = await h.done;
     expect(early).toBe("abc123");
     expect(JSON.parse(res.stdout).args).toEqual(["run", "--pr", "1"]);
+  });
+
+  // @spec EXT-CMD-010
+  it("offers the plan or transcript as context explaining the change, not as a choice of agent", () => {
+    expect(PLAN_PROMPT).toBe("Attach a plan or transcript explaining why this change was made? (optional)");
+    expect(PLAN_CHOICES).toEqual({ skip: "No, skip", choose: "Choose a plan or transcript file… (e.g. a Claude Code session)" });
+  });
+
+  // @spec EXT-LOG-001
+  it("hands each complete standard-error line to the caller as it arrives", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "duet-cli-"));
+    const script = join(dir, "fake.mjs");
+    writeFileSync(script, `process.stderr.write("duet: intent: run"); setTimeout(() => { process.stderr.write("ning\\nduet-run abc /x\\nduet: intent: complete in 1s\\n"); }, 30);`);
+    const lines: string[] = [];
+    let early = "";
+    await startEngine(process.execPath, script, [], dir, (id) => (early = id), (l) => lines.push(l)).done;
+    expect(lines).toEqual(["duet: intent: running", "duet-run abc /x", "duet: intent: complete in 1s"]);
+    expect(early).toBe("abc");
   });
 
   // @spec EXT-CMD-005
@@ -358,3 +423,318 @@ describe("posting the decision log", () => {
     expect(sent).toEqual([]);
   });
 });
+
+/** Fills the vscode stub with recording fakes, activates the extension, and returns what it recorded. */
+function activateWithFakes(repo: string, engineScript: string) {
+  const ext = mkdtempSync(join(tmpdir(), "duet-extpath-"));
+  mkdirSync(join(ext, "dist", "engine"), { recursive: true });
+  writeFileSync(join(ext, "dist", "engine", "duet.mjs"), engineScript);
+  const rec = {
+    handlers: {} as Record<string, (...a: unknown[]) => Promise<unknown> | unknown>,
+    errors: [] as string[],
+    warnings: [] as string[],
+    infos: [] as string[],
+    quickPicks: [] as { items: unknown[]; opts: { placeHolder?: string } }[],
+    channel: { name: "", lines: [] as string[], shown: 0 },
+    status: { text: "", command: "" as unknown, visible: false },
+    progress: [] as { location: unknown; reports: { message?: string; increment?: number }[] }[],
+    panels: [] as { htmlSets: number; html: string; send(m: unknown): void }[],
+    opened: [] as string[],
+    planPick: "No, skip",
+    openPick: undefined as string | undefined,
+  };
+  Object.assign(vscode.workspace, {
+    workspaceFolders: [{ uri: { fsPath: repo } }],
+    getConfiguration: () => ({ get: (k: string) => (k === "nodePath" ? process.execPath : undefined) }),
+    openTextDocument: async (x: unknown) => {
+      rec.opened.push(typeof x === "string" ? x : JSON.stringify(x));
+      return { getText: () => "" };
+    },
+  });
+  Object.assign(vscode.window, {
+    showQuickPick: async (items: unknown[], opts: { placeHolder?: string }) => {
+      rec.quickPicks.push({ items, opts });
+      if (typeof items[0] === "string") return (items as string[]).find((i) => i === rec.planPick);
+      const withRun = (items as { runId?: string }[]).find((i) => i.runId && i.runId === rec.openPick);
+      return withRun ?? items[0];
+    },
+    showInputBox: async (o: { value?: string }) => o.value ?? "",
+    showOpenDialog: async () => undefined,
+    showErrorMessage: async (m: string) => void rec.errors.push(m),
+    showWarningMessage: async (m: string) => void rec.warnings.push(m),
+    showInformationMessage: async (m: string) => void rec.infos.push(m),
+    showTextDocument: async () => ({}),
+    setStatusBarMessage: () => ({ dispose() {} }),
+    registerTreeDataProvider: () => ({ dispose() {} }),
+    createOutputChannel: (name: string) => {
+      rec.channel.name = name;
+      return { appendLine: (l: string) => void rec.channel.lines.push(l), append: () => {}, show: () => void rec.channel.shown++, clear: () => {}, dispose() {} };
+    },
+    createStatusBarItem: () => ({
+      get text() { return rec.status.text; },
+      set text(v: string) { rec.status.text = v; },
+      get command() { return rec.status.command; },
+      set command(v: unknown) { rec.status.command = v; },
+      tooltip: "",
+      show() { rec.status.visible = true; },
+      hide() { rec.status.visible = false; },
+      dispose() {},
+    }),
+    withProgress: async (opts: { location: unknown }, task: (p: { report(x: { message?: string; increment?: number }): void }) => Promise<unknown>) => {
+      const entry = { location: opts.location, reports: [] as { message?: string; increment?: number }[] };
+      rec.progress.push(entry);
+      return task({ report: (x) => void entry.reports.push(x) });
+    },
+    createWebviewPanel: () => {
+      let listener: (m: unknown) => void = () => {};
+      let html = "";
+      const p = { htmlSets: 0, html: "", send: (m: unknown) => listener(m) };
+      rec.panels.push(p);
+      return {
+        title: "",
+        webview: {
+          cspSource: "csp",
+          get html() { return html; },
+          set html(v: string) { html = v; p.html = v; p.htmlSets++; },
+          onDidReceiveMessage: (cb: (m: unknown) => void) => void (listener = cb),
+          postMessage: async () => true,
+        },
+        onDidDispose: () => {},
+        dispose() {},
+        reveal() {},
+      };
+    },
+  });
+  Object.assign(vscode.commands, {
+    registerCommand: (id: string, fn: (...a: unknown[]) => unknown) => {
+      rec.handlers[id] = fn as never;
+      return { dispose() {} };
+    },
+  });
+  Object.assign(vscode.comments, { createCommentController: () => fakeController().controller });
+  activate({ extensionPath: ext, subscriptions: [] } as never);
+  return rec;
+}
+
+const fakeEngine = (runDir: string) => `process.stderr.write("duet-run r1 ${runDir}\\n");
+process.stderr.write("duet: findings: running\\n");
+setTimeout(() => { process.stdout.write(JSON.stringify({ runId: "r1", runDir: ${JSON.stringify(runDir)}, stages: {} }) + "\\n"); }, 400);`;
+
+describe("start review, progress, and logs", () => {
+  // @spec EXT-CMD-011, EXT-CMD-010, EXT-LOG-001, EXT-LOG-003, EXT-LOG-004, EXT-VIEW-017
+  it("starts a review that succeeds without any error, streaming the engine's output and showing progress", async () => {
+    const s = setup();
+    mkdirSync(join(s.repo, "src"), { recursive: true });
+    writeFileSync(join(s.repo, "src/upload.ts"), "a\nb\nc\nd\n");
+    const rec = activateWithFakes(s.repo, fakeEngine(s.store.runDir("r1")));
+    await rec.handlers["duet.startReview"]();
+    expect(rec.errors).toEqual([]);
+    expect(rec.warnings).toEqual([]);
+    expect(rec.quickPicks[1].opts.placeHolder).toBe(PLAN_PROMPT);
+    expect(rec.quickPicks[1].items).toEqual([PLAN_CHOICES.skip, PLAN_CHOICES.choose]);
+    expect(rec.channel.name).toBe("Duet");
+    expect(rec.channel.lines).toEqual(expect.arrayContaining([expect.stringMatching(/^duet-run r1 /), "duet: findings: running"]));
+    expect(rec.channel.shown).toBe(0);
+    expect(rec.progress).toHaveLength(1);
+    expect(rec.progress[0].location).toBe(vscode.ProgressLocation.Notification);
+    expect(rec.progress[0].reports.map((r) => r.message)).toContain("4/6 stages · findings…");
+    expect(rec.status).toMatchObject({ text: "Duet: 4/6 stages · findings…", command: "duet.showLog", visible: true });
+    expect(rec.panels).toHaveLength(1);
+    expect(rec.panels[0].htmlSets).toBe(1);
+    s.p.setStage("findings", { status: "complete" });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(rec.panels[0].htmlSets).toBe(2);
+    expect(rec.status.text).toBe("Duet: 5/6 stages");
+  });
+
+  // @spec EXT-LOG-002, EXT-VIEW-013
+  it("shows the live output channel for a run started here, and the run's engine.log for a reopened one", async () => {
+    const s = setup();
+    const rec = activateWithFakes(s.repo, fakeEngine(s.store.runDir("r1")));
+    await rec.handlers["duet.startReview"]();
+    await rec.handlers["duet.showLog"]();
+    expect(rec.channel.shown).toBe(1);
+    rec.panels[0].send({ type: "showLog" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rec.channel.shown).toBe(2);
+    const other = s.store.pipeline("r2");
+    other.initRun({ base: "c".repeat(40), head: HEAD, title: "Other" });
+    other.appendLog("2026-01-01T00:00:00.000Z duet: intent: running");
+    rec.openPick = "r2";
+    await rec.handlers["duet.openReview"]();
+    await rec.handlers["duet.showLog"]();
+    expect(rec.opened).toContain(join(s.store.runDir("r2"), "engine.log"));
+    expect(rec.channel.shown).toBe(2);
+  });
+});
+
+describe("panel progress and view state", () => {
+  // @spec EXT-LOG-003, EXT-LOG-004
+  it("counts complete stages out of the total and names the running ones", () => {
+    const p = stageProgress([
+      { name: "context", status: "complete" },
+      { name: "intent", status: "complete" },
+      { name: "briefing", status: "running" },
+      { name: "cards", status: "pending" },
+      { name: "recommendations", status: "pending" },
+      { name: "findings", status: "running" },
+    ]);
+    expect(p).toEqual({ done: 2, total: 6, percent: 33, running: ["briefing", "findings"] });
+    expect(progressText(p)).toBe("2/6 stages · briefing, findings…");
+    expect(progressText(stageProgress([{ name: "context", status: "complete" }]))).toBe("1/1 stages");
+  });
+
+  // @spec EXT-VIEW-013
+  it("shows a progress bar and a Show log control in the stage strip", () => {
+    const html = renderPanel(model(setup()), "n", "csp");
+    expect(html).toContain('<div class="progress"><div class="progress-bar" style="width:67%"></div></div>');
+    expect(html).toContain('<button class="log-link" data-action="show-log">Show log</button>');
+  });
+
+  // @spec EXT-VIEW-013
+  it("routes Show log from the panel to the extension", async () => {
+    const s = setup();
+    let shown = 0;
+    let refreshed = 0;
+    const h: ControllerHooks = { post: () => {}, refresh: () => void refreshed++, askReason: async () => "", openAnchor: () => {}, openTerminal: () => {}, showLog: () => void shown++ };
+    await handleMessage(s.session, h, { type: "showLog" });
+    expect([shown, refreshed]).toEqual([1, 0]);
+  });
+
+  // @spec EXT-VIEW-016
+  it("keeps the active tab, each tab's scroll position, and unsent input on uncommitted cards across a reload", () => {
+    let saved: unknown;
+    const api = { postMessage: () => {}, getState: () => saved, setState: (s: unknown) => void (saved = JSON.parse(JSON.stringify(s))) };
+    const first = fakePanelDom();
+    runClient(first, api);
+    first.scroll(300);
+    first.el("tab-decisions-button").onclick!();
+    first.scroll(120);
+    first.el("ask-D1").value = "Why five?";
+    first.el("ask-D1").oninput!();
+    first.el("opt-D1-1").checked = true;
+    first.el("opt-D1-1").onchange!();
+    first.el("rat-D1").value = "Bounded is safer";
+    first.el("rat-D1").oninput!();
+
+    const second = fakePanelDom();
+    runClient(second, api);
+    expect(second.el("tab-decisions-button").classList.contains("active")).toBe(true);
+    expect(second.el("tab-decisions").classList.contains("hidden")).toBe(false);
+    expect(second.doc.scrollingElement.scrollTop).toBe(120);
+    expect(second.el("ask-D1").value).toBe("Why five?");
+    expect(second.el("opt-D1-1").checked).toBe(true);
+    expect(second.el("rat-D1").value).toBe("Bounded is safer");
+    second.el("tab-briefing-button").onclick!();
+    expect(second.doc.scrollingElement.scrollTop).toBe(300);
+
+    const committed = fakePanelDom({ committed: true });
+    runClient(committed, api);
+    expect(committed.el("rat-D1").value).toBe("");
+    expect(committed.el("opt-D1-1").checked).toBe(false);
+  });
+});
+
+interface FakeEl {
+  key: string;
+  tag: string;
+  id: string;
+  classList: { contains(c: string): boolean; toggle(c: string, on?: boolean): void; add(c: string): void };
+  dataset: Record<string, string>;
+  attrs: Record<string, string>;
+  parent: FakeEl | null;
+  value: string;
+  checked: boolean;
+  disabled: boolean;
+  textContent: string;
+  onclick?: (e?: unknown) => void;
+  oninput?: () => void;
+  onchange?: () => void;
+  querySelector(sel: string): FakeEl | null;
+  querySelectorAll(sel: string): FakeEl[];
+}
+
+/** The parts of the panel's DOM its script touches: two tabs and one card. Supports simple selectors only. */
+function fakePanelDom(opts: { committed?: boolean } = {}) {
+  const all: FakeEl[] = [];
+  const matches = (e: FakeEl, compound: string): boolean => {
+    const m = /^([a-z]+)?(#[\w-]+)?((?:\.[\w-]+)*)((?:\[[^\]]+\])*)(:checked)?$/.exec(compound);
+    if (!m) throw new Error(`unsupported selector ${compound}`);
+    if (m[1] && e.tag !== m[1]) return false;
+    if (m[2] && e.id !== m[2].slice(1)) return false;
+    for (const c of m[3].split(".").filter(Boolean)) if (!e.classList.contains(c)) return false;
+    for (const a of m[4].match(/\[[^\]]+\]/g) ?? []) {
+      const [, k, quoted, bare] = /^\[([\w-]+)(?:=(?:"([^"]*)"|([\w-]+)))?\]$/.exec(a)!;
+      const want = quoted ?? bare;
+      if (!(k in e.attrs) || (want !== undefined && e.attrs[k] !== want)) return false;
+    }
+    if (m[5] && !e.checked) return false;
+    return true;
+  };
+  const within = (root: FakeEl | null, sel: string) => {
+    const parts = sel.trim().split(/\s+/);
+    return all.filter((e) => {
+      if (!matches(e, parts[parts.length - 1])) return false;
+      let anc = e.parent;
+      for (let i = parts.length - 2; i >= 0; i--) {
+        while (anc && !matches(anc, parts[i])) anc = anc.parent;
+        if (!anc) return false;
+        anc = anc.parent;
+      }
+      if (root) {
+        let p = e.parent;
+        while (p && p !== root) p = p.parent;
+        if (!p) return false;
+      }
+      return true;
+    });
+  };
+  const make = (key: string, tag: string, attrs: Record<string, string>, parent: FakeEl | null): FakeEl => {
+    const classes = new Set((attrs.class ?? "").split(" ").filter(Boolean));
+    const el: FakeEl = {
+      key, tag, id: attrs.id ?? "", attrs, parent, value: attrs.value ?? "", checked: false, disabled: "disabled" in attrs, textContent: "",
+      classList: { contains: (c) => classes.has(c), toggle: (c, on) => void ((on ?? !classes.has(c)) ? classes.add(c) : classes.delete(c)), add: (c) => void classes.add(c) },
+      dataset: Object.fromEntries(Object.entries(attrs).filter(([k]) => k.startsWith("data-")).map(([k, v]) => [k.slice(5).replace(/-(\w)/g, (_, c: string) => c.toUpperCase()), v])),
+      querySelector: (sel) => within(el, sel)[0] ?? null,
+      querySelectorAll: (sel) => within(el, sel),
+    };
+    all.push(el);
+    return el;
+  };
+  const dis: Record<string, string> = opts.committed ? { disabled: "" } : {};
+  make("tab-briefing-button", "button", { class: "tab active", "data-tab": "briefing" }, null);
+  make("tab-decisions-button", "button", { class: "tab", "data-tab": "decisions" }, null);
+  make("tab-briefing", "div", { class: "tabpane", id: "tab-briefing" }, null);
+  const pane = make("tab-decisions", "div", { class: "tabpane hidden", id: "tab-decisions" }, null);
+  const cardEl = make("card-D1", "section", { class: "card", id: "card-D1", "data-card": "D1" }, pane);
+  const fs = make("fs-D1", "fieldset", { ...dis }, cardEl);
+  make("opt-D1-0", "input", { type: "radio", name: "opt-D1", value: "0" }, fs);
+  make("opt-D1-1", "input", { type: "radio", name: "opt-D1", value: "1" }, fs);
+  make("rat-D1", "textarea", { class: "rationale", "data-card": "D1", ...dis }, cardEl);
+  make("commit-D1", "button", { class: "commit", "data-card": "D1", disabled: "" }, cardEl);
+  make("ask-D1", "input", { class: "ask", "data-card": "D1" }, cardEl);
+  make("askbtn-D1", "button", { class: "ask-btn", "data-card": "D1" }, cardEl);
+  make("log", "button", { class: "log-link", "data-action": "show-log" }, null);
+  const listeners: Record<string, (() => void)[]> = {};
+  const doc = {
+    scrollingElement: { scrollTop: 0 },
+    querySelector: (sel: string) => within(null, sel)[0] ?? null,
+    querySelectorAll: (sel: string) => within(null, sel),
+    createElement: (tag: string) => make("new", tag, {}, null),
+    body: { prepend() {} },
+  };
+  const win = { addEventListener: (t: string, fn: () => void) => void (listeners[t] ??= []).push(fn) };
+  return {
+    doc,
+    win,
+    el: (key: string) => all.find((e) => e.key === key)!,
+    scroll: (y: number) => {
+      doc.scrollingElement.scrollTop = y;
+      (listeners.scroll ?? []).forEach((f) => f());
+    },
+  };
+}
+
+function runClient(dom: ReturnType<typeof fakePanelDom>, api: unknown) {
+  new Function("acquireVsCodeApi", "document", "window", CLIENT)(() => api, dom.doc, dom.win);
+}

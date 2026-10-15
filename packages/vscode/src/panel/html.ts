@@ -1,3 +1,4 @@
+import { stageProgress } from "../progress.ts";
 import type { CardView, ChoiceView, PanelModel, Placeholder } from "./model.ts";
 
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -57,6 +58,8 @@ export function cardHtml(c: CardView): string {
 
 export function renderPanel(m: PanelModel, nonce: string, cspSource: string): string {
   const strip = m.stages.map((s) => `<span class="stage ${s.status}" title="${esc(s.error ?? s.detail ?? s.status)}">${esc(s.name)} ${s.status === "complete" ? "✓" : s.status === "failed" ? "✗" : s.status === "running" ? "…" : "·"}</span>`).join("");
+  // @spec EXT-VIEW-013
+  const progress = `<div class="progress"><div class="progress-bar" style="width:${stageProgress(m.stages).percent}%"></div></div><button class="log-link" data-action="show-log">Show log</button>`;
   const intent = isPlaceholder(m.intent)
     ? stagePlaceholder(m.intent)
     : `<div class="intent"><p><strong>Claims to:</strong> ${esc(m.intent.stated || "(no stated intent)")}</p><p><strong>Actually does:</strong> ${esc(m.intent.observed)}</p>${m.intent.mismatches.length ? `<ul class="mismatch">${m.intent.mismatches.map((x) => `<li>${esc(x.kind)}: ${esc(x.statement)}</li>`).join("")}</ul>` : ""}</div>`;
@@ -71,7 +74,7 @@ export function renderPanel(m: PanelModel, nonce: string, cspSource: string): st
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(m.title)}</title><style>${STYLE}</style></head>
-<body><header class="top"><h1>${esc(m.title)}</h1><div class="strip">${strip}</div>${m.effort ? `<div class="effort">Effort ${m.effort.score}/5 (~${m.effort.minutes} min)</div>` : ""}</header>
+<body><header class="top"><h1>${esc(m.title)}</h1><div class="strip">${strip}${progress}</div>${m.effort ? `<div class="effort">Effort ${m.effort.score}/5 (~${m.effort.minutes} min)</div>` : ""}</header>
 ${m.banner ? `<div class="banner">${esc(m.banner)}</div>` : ""}
 <nav><button class="tab active" data-tab="briefing">Briefing</button><button class="tab" data-tab="decisions">Decisions${isPlaceholder(m.deck) ? "" : ` (${m.deck.length})`}</button></nav>
 <main><div class="tabpane" id="tab-briefing">${intent}${choices}${settled}${steps}</div><div class="tabpane hidden" id="tab-decisions">${deck}</div></main>
@@ -91,19 +94,38 @@ textarea.rationale{width:100%;min-height:48px;margin-top:6px}.rec{margin-top:8px
 .rationale.inferred .source,.rationale.none .source{font-style:italic}.rationale.stated .source{font-weight:bold}.stale{color:var(--vscode-charts-orange)}
 .qa .q{font-weight:bold;margin-top:6px}.qa input{width:75%;margin-top:6px}.flags{color:var(--vscode-charts-orange)}a.anchor{margin-right:8px}`;
 
-const CLIENT = `const vscode=acquireVsCodeApi();
+// @spec EXT-VIEW-016, EXT-VIEW-013
+export const CLIENT = `const vscode=acquireVsCodeApi();
 const send=(m)=>vscode.postMessage(m);
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('hidden',p.id!=='tab-'+t.dataset.tab));vscode.setState({tab:t.dataset.tab});});
-const st=vscode.getState();if(st&&st.tab){const t=document.querySelector('.tab[data-tab="'+st.tab+'"]');t&&t.click();}
+const view=Object.assign({tab:'briefing'},vscode.getState()||{});view.scroll=view.scroll||{};view.drafts=view.drafts||{};
+const save=()=>vscode.setState(view);
+const scroller=()=>document.scrollingElement||document.documentElement;
+function draft(key,value){if(value===undefined||value==='')delete view.drafts[key];else view.drafts[key]=value;save();}
+function showTab(name){const t=document.querySelector('.tab[data-tab="'+name+'"]');if(!t)return false;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('hidden',p.id!=='tab-'+name));view.tab=name;return true;}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{view.scroll[view.tab]=scroller().scrollTop;showTab(t.dataset.tab);scroller().scrollTop=view.scroll[view.tab]||0;save();});
+window.addEventListener('scroll',()=>{view.scroll[view.tab]=scroller().scrollTop;save();});
 function chosen(card){const r=document.querySelector('input[name="opt-'+card+'"]:checked');return r?Number(r.value):undefined;}
 function rationale(card){const t=document.querySelector('textarea.rationale[data-card="'+card+'"]');return t?t.value:'';}
 function check(card){send({type:'check',cardId:card,option:chosen(card),rationale:rationale(card)});}
-document.querySelectorAll('.card').forEach(c=>{const id=c.dataset.card;c.querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>check(id));const t=c.querySelector('textarea.rationale');t&&(t.oninput=()=>check(id));});
-document.querySelectorAll('button.commit').forEach(b=>b.onclick=()=>send({type:'commit',cardId:b.dataset.card,option:chosen(b.dataset.card),rationale:rationale(b.dataset.card)}));
+function mirror(sel,src){document.querySelectorAll(sel).forEach(x=>{if(x!==src)x.value=src.value;});}
+document.querySelectorAll('.card').forEach(c=>{const id=c.dataset.card;
+c.querySelectorAll('input[type=radio]').forEach(r=>r.onchange=()=>{draft('o:'+id,r.value);check(id);});
+const t=c.querySelector('textarea.rationale');t&&(t.oninput=()=>{mirror('textarea.rationale[data-card="'+id+'"]',t);draft('r:'+id,t.value);check(id);});
+const q=c.querySelector('input.ask');q&&(q.oninput=()=>{mirror('input.ask[data-card="'+id+'"]',q);draft('q:'+id,q.value);});});
+document.querySelectorAll('button.commit').forEach(b=>b.onclick=()=>{const id=b.dataset.card;send({type:'commit',cardId:id,option:chosen(id),rationale:rationale(id)});draft('o:'+id);draft('r:'+id);});
 document.querySelectorAll('button.reveal').forEach(b=>b.onclick=()=>send({type:'reveal',cardId:b.dataset.card}));
 document.querySelectorAll('button.change').forEach(b=>b.onclick=()=>{const fs=document.querySelector('#card-'+b.dataset.card+' fieldset');if(fs.disabled){fs.disabled=false;b.textContent='Save changed answer';return;}send({type:'change',cardId:b.dataset.card,option:chosen(b.dataset.card)});});
-document.querySelectorAll('button.ask-btn').forEach(b=>b.onclick=()=>{const i=document.querySelector('input.ask[data-card="'+b.dataset.card+'"]');if(i.value.trim()){send({type:'ask',cardId:b.dataset.card,question:i.value});b.disabled=true;b.textContent='Asking…';}});
+document.querySelectorAll('button.ask-btn').forEach(b=>b.onclick=()=>{const i=document.querySelector('input.ask[data-card="'+b.dataset.card+'"]');if(i.value.trim()){send({type:'ask',cardId:b.dataset.card,question:i.value});draft('q:'+b.dataset.card);b.disabled=true;b.textContent='Asking…';}});
 document.querySelectorAll('button.terminal').forEach(b=>b.onclick=()=>send({type:'terminal',cardId:b.dataset.card}));
 document.querySelectorAll('a.anchor').forEach(a=>a.onclick=(e)=>{e.preventDefault();send({type:'openAnchor',anchor:JSON.parse(a.dataset.anchor)});});
+document.querySelectorAll('[data-action="show-log"]').forEach(b=>b.onclick=()=>send({type:'showLog'}));
+document.querySelectorAll('.card').forEach(c=>{const id=c.dataset.card;let restored=false;
+const fs=c.querySelector('fieldset');const o=view.drafts['o:'+id];
+if(o!==undefined&&fs&&!fs.disabled){const r=c.querySelector('input[type=radio][value="'+o+'"]');if(r){r.checked=true;restored=true;}}
+const t=c.querySelector('textarea.rationale');const rv=view.drafts['r:'+id];
+if(rv!==undefined&&t&&!t.disabled&&!t.value){t.value=rv;restored=true;}
+const q=c.querySelector('input.ask');const qv=view.drafts['q:'+id];if(qv!==undefined&&q&&!q.value)q.value=qv;
+if(restored)check(id);});
+showTab(view.tab)||showTab('briefing');scroller().scrollTop=view.scroll[view.tab]||0;save();
 window.addEventListener('message',e=>{const m=e.data;if(m.type==='checkResult'){const b=document.querySelector('button.commit[data-card="'+m.cardId+'"]');if(b)b.disabled=!m.ok;const s=document.querySelector('.check[data-card="'+m.cardId+'"]');if(s)s.textContent=m.ok?'':m.reason;}
 if(m.type==='error'){const d=document.createElement('div');d.className='notice';d.textContent=m.message;document.body.prepend(d);}});`;

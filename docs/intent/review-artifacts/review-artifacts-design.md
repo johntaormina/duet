@@ -34,11 +34,14 @@ Each review is a run, stored in one directory, by default `.duet/<run-id>/` unde
   qa.<reviewer>.jsonl      questions and answers per card    (session)
   record.<reviewer>.json   the decision record               (session)
   finding-state.<reviewer>.json  dismissals by fingerprint   (session)
+  engine.log               progress log, plain text          (pipeline)
 ```
 
 JSON files are written atomically (to a temporary file, then renamed), so an interface watching the directory never reads a partial file. The `.jsonl` question logs are append-only; each entry is one complete line, a reader ignores an incomplete trailing line, and a writer removes an incomplete trailing line before appending. Every JSON file carries `schema_version` (`major.minor`). A reader accepts any minor version of the major it knows and treats an unknown major as a failure it reports, not as data it guesses at.
 
 Every file validates against a JSON Schema kept with the project. The pipeline validates before writing and the session validates on read. A pipeline output that fails validation marks its stage failed; nothing partial is kept or shown as complete. A session file that fails validation is reported and left untouched, and the store refuses further writes to it until it is repaired or moved aside, because it holds human input that cannot be regenerated.
+
+`engine.log` is the one file that is neither JSON nor a contract between components: a human-readable, append-only record of the engine's progress (stages starting and finishing, each Claude CLI call and how long it took), one timestamped line per entry, written through the pipeline's writer. It has no schema, nothing parses it, and nothing reads it back to decide anything; interfaces show it to a person who wants to know what the engine is doing or did.
 
 A markdown rendering of the briefing may be produced from `briefing.json` by a pure function. It is for reading without an interface and is never read back.
 
@@ -135,6 +138,7 @@ It also holds `posted`: each external post made, with the target, a hash of the 
 | Decision | Chosen | Alternatives Considered | Rationale |
 |---|---|---|---|
 | Storage | Plain JSON files in a run directory | A database; one large document | Files are readable, diffable, and watchable by any interface, and need no server. Per-stage files let each stage's result be shown the moment it exists |
+| Engine progress log | Plain-text `engine.log` in the run directory, no schema | Progress events in `run.json`; a JSON log with a schema; standard error only | Stage state already lives in `run.json`; the log is for a person, not a program. Keeping it in the run directory lets an interface show it for a run the engine is no longer running, and keeping it schemaless keeps it out of the contract |
 | Writers | One writer per file; human data in separate files | Single shared document updated by all | A rerun cannot overwrite a reviewer's answers, and no locking between engine and session is needed |
 | Recommendations | Separate file from cards | Embedded in each card | The card can be shown with no recommendation in the interface's hands; blind-first becomes a matter of when the file is read |
 | Schemas | Language-neutral JSON Schema, validated on write and on read | Type definitions in one language only | The engine and interfaces may be written in different languages; a schema is the one place the contract is stated |

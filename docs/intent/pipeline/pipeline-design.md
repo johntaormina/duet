@@ -19,7 +19,7 @@ The engine exposes the `duet` command with three operations:
 - **ask**: answer a reviewer's question about one card in an existing run (see *Questions*).
 - **clean**: remove run directories, their head worktrees, and their snapshot refs, for runs older than a given age or named explicitly.
 
-As soon as `run` has created or found its run, it announces the run id on standard error, so an interface can open the review and show stages filling in while the engine works.
+As soon as `run` has created or found its run, it announces the run on standard error as one line, `duet-run <run-id> <run-dir>`, so an interface can open the review and show stages filling in while the engine works.
 
 The VS Code extension and the review session call these operations; the engine never depends on them.
 
@@ -88,6 +88,20 @@ Every call passes a prompt assembled from a prompt file and the stage's inputs, 
 - **Concurrency.** At most a configured number of CLI calls run at once in one `run` (default 3), across both branches, with human-layer calls served first. `ask` calls are outside this cap.
 - **Recommendations.** Each card's recommendation is written to `recommendations.json` as soon as it is produced, so a reviewer who commits early does not wait for the rest of the deck.
 
+## Progress
+
+A review takes minutes, most of them inside Claude CLI calls, so the engine says what it is doing as it goes. During `run` it reports a progress line when a stage starts, completes, fails, or is reused; when each Claude CLI call starts (naming the stage, the prompt when the stage makes several calls, and the model) and when it ends (with how long it took, or the CLI's error); and when a call waits on a rate limit. For example:
+
+```
+duet: briefing: running
+duet: briefing: claude started (model sonnet)
+duet: briefing: claude done in 41s
+duet: briefing: complete in 42s
+duet: findings: specialist-bugs: claude failed after 300s: specialist-bugs timed out after 300s without output
+```
+
+Each line goes to standard error, so an interface that started the engine can stream it, and is appended with a timestamp to the run's `engine.log`, so the progress of a run can be read after the process that produced it has gone. The lines are for people: interfaces take stage state from `run.json`, and the only standard-error line an interface parses is the run announcement. `ask` and `clean` report no progress.
+
 ## Failure
 
 A failed stage records its error. Every stage downstream of it in the same branch is marked failed with an error naming the upstream stage; none is skipped silently. A failure in the human layer never fails the findings stage, and a failure in the findings stage never fails a human-layer stage.
@@ -117,6 +131,7 @@ On start, the engine asks the artifact store which stages are reusable and runs 
 | Author reasoning in the pack | Commit messages, history of the changed lines, linked documents, and any author statement or agent plan, ranked just below the diff | Description and linked issue only | The reasons for a change usually live outside its description; without them, every explanation is Claude's guess |
 | Caller discovery | A resolver per ecosystem where configured; text search with a stop-list and caps otherwise, its limits recorded | Text search only | Text search misses references in infrastructure, data, and dependency-injection code, and floods on common names |
 | Retries | One per call, shared across all reasons | One per reason | Stacked retries multiply calls on the critical path and hide a broken prompt |
+| Progress reporting | Human-readable lines on standard error, also appended to `engine.log` | Structured progress events for interfaces to parse; standard error only | Interfaces already read stage state from `run.json`, so a second machine-readable channel would duplicate it; the log file lets a reopened run show what happened after the engine process is gone |
 | Recommendations | One fresh call per card after the cards stage | Written by the card-writing call | A call that wrote the options would also have shaped them toward its favorite; separate calls keep the lean out of the card |
 
 ## Open Questions & Future Decisions

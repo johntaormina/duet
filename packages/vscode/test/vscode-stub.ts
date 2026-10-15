@@ -22,3 +22,5 @@ export const workspace = { workspaceFolders: [] };
 export const commands = {};
 export const comments = {};
 export enum ViewColumn { One = 1 }
+export enum ProgressLocation { SourceControl = 1, Window = 10, Notification = 15 }
+export enum StatusBarAlignment { Left = 1, Right = 2 }

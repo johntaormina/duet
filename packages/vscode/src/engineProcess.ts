@@ -20,6 +20,11 @@ export function startQuestions(kind: StartChoice["kind"]): ("base" | "pr" | "sta
   return ["base", "statement", "plan"];
 }
 
+/** The Start review prompt for an optional plan or transcript, worded as context for the change rather than a choice of reviewer. */
+// @spec EXT-CMD-010
+export const PLAN_PROMPT = "Attach a plan or transcript explaining why this change was made? (optional)";
+export const PLAN_CHOICES = { skip: "No, skip", choose: "Choose a plan or transcript file… (e.g. a Claude Code session)" } as const;
+
 /** Arguments for the engine's `run`. */
 // @spec EXT-CMD-008
 export function runArgs(a: StartAnswers): string[] {
@@ -37,20 +42,38 @@ export interface EngineHandle {
   done: Promise<{ code: number; stderr: string; stdout: string }>;
 }
 
-/** Starts the engine as a background child process. */
-// @spec EXT-CMD-002
-export function startEngine(nodePath: string, cliPath: string, args: string[], cwd: string, onRun?: (runId: string, runDir: string) => void): EngineHandle {
+/**
+ * Starts the engine as a background child process. `onRun` hears the run announcement; `onLine`
+ * receives every complete standard-error line as it arrives.
+ */
+// @spec EXT-CMD-002, EXT-LOG-001
+export function startEngine(nodePath: string, cliPath: string, args: string[], cwd: string, onRun?: (runId: string, runDir: string) => void, onLine?: (line: string) => void): EngineHandle {
   const child = spawn(nodePath, [cliPath, ...args], { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env });
   let stdout = "";
   let stderr = "";
+  let partial = "";
+  const line = (l: string) => {
+    const m = /^duet-run (\S+) (.+)$/.exec(l);
+    if (m) onRun?.(m[1], m[2].trim());
+    onLine?.(l);
+  };
   child.stdout.on("data", (c) => (stdout += c));
   child.stderr.on("data", (c) => {
     stderr += c;
-    const m = /^duet-run (\S+) (.+)$/m.exec(String(c));
-    if (m) onRun?.(m[1], m[2].trim());
+    partial += c;
+    let nl: number;
+    while ((nl = partial.indexOf("\n")) >= 0) {
+      const l = partial.slice(0, nl).replace(/\r$/, "");
+      partial = partial.slice(nl + 1);
+      line(l);
+    }
   });
   const done = new Promise<{ code: number; stderr: string; stdout: string }>((resolve) => {
-    child.on("close", (code) => resolve({ code: code ?? 1, stderr, stdout }));
+    child.on("close", (code) => {
+      if (partial) line(partial);
+      partial = "";
+      resolve({ code: code ?? 1, stderr, stdout });
+    });
     child.on("error", (e) => resolve({ code: 1, stderr: e.message, stdout }));
   });
   return { pid: child.pid, done };

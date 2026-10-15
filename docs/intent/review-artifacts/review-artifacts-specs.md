@@ -11,6 +11,7 @@ Design: `review-artifacts-design.md`. "The artifact store" is the shared library
 - [x] **ART-RUN-005**: The artifact store shall keep each snapshot commit reachable through a ref under the `refs/duet/` namespace until the run directory that uses it is removed.
 - [x] **ART-RUN-006**: When the artifact store creates the root directory, it shall write a `.gitignore` inside the root that ignores the root's contents, unless configuration marks the root as tracked.
 - [x] **ART-RUN-007**: When snapshotting the working tree, the artifact store shall create the snapshot commit with a fixed author, committer, timestamp, and message, so the same base and working-tree contents always produce the same snapshot SHA and the same run id.
+- [x] **ART-RUN-008**: The artifact store's pipeline writer shall append progress lines to `engine.log` in the run directory, one complete line per entry, never rewriting earlier lines.
 
 ## Writing, validation, and versioning
 

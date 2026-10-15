@@ -202,6 +202,12 @@ export class PipelineWriter {
     this.writeChecked(file as PipelineFile, data);
   }
 
+  /** Appends one line to the run's plain-text progress log. */
+  // @spec ART-RUN-008
+  appendLog(line: string): void {
+    appendFileSync(join(this.dir, "engine.log"), `${line.replace(/\n+$/, "")}\n`);
+  }
+
   private writeChecked(file: PipelineFile, data: unknown): void {
     const ctx = file === "cards" ? { briefing: readVersioned<PipelineFiles["briefing"]>(join(this.dir, "briefing.json")) } : {};
     const result = validate(file, data, ctx);

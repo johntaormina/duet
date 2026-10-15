@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { ChangeRef } from "@duet/adapters";
-import { ask, clean, LockHeldError, run } from "./engine.ts";
+import { ask, clean, type EngineDeps, LockHeldError, run } from "./engine.ts";
 
 const USAGE = `Usage:
   duet run --pr <number> | --base <ref> [--head <ref>] | --worktree [--base <ref>]
@@ -26,7 +26,8 @@ function parseArgs(argv: string[]) {
 
 const str = (v: string | true | undefined) => (typeof v === "string" ? v : undefined);
 
-export async function main(argv: string[], out = process.stdout, err = process.stderr): Promise<number> {
+// @spec PIPE-CLI-006, PIPE-PROG-005
+export async function main(argv: string[], out = process.stdout, err = process.stderr, deps: EngineDeps = {}): Promise<number> {
   const [command, ...rest] = argv;
   const { flags, positional } = parseArgs(rest);
   const repoRoot = str(flags.repo) ?? process.cwd();
@@ -41,12 +42,21 @@ export async function main(argv: string[], out = process.stdout, err = process.s
         return 2;
       }
       const statement = str(flags.statement) ?? (flags["statement-file"] ? readFileSync(str(flags["statement-file"])!, "utf8") : undefined);
-      const summary = await run({ repoRoot, change, authorStatement: statement, agentPlanFile: str(flags.plan), onRun: (id, dir) => err.write(`duet-run ${id} ${dir}\n`) });
+      const summary = await run({
+        ...deps,
+        repoRoot,
+        change,
+        authorStatement: statement,
+        agentPlanFile: str(flags.plan),
+        onRun: (id, dir) => err.write(`duet-run ${id} ${dir}\n`),
+        onProgress: (line) => err.write(`${line}\n`),
+      });
       out.write(`${JSON.stringify(summary)}\n`);
       return Object.values(summary.stages).every((s) => s === "complete") ? 0 : 1;
     }
     if (command === "ask") {
       const answer = await ask({
+        ...deps,
         repoRoot,
         runId: str(flags.run)!,
         cardId: str(flags.card)!,

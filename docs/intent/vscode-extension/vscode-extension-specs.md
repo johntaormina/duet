@@ -5,14 +5,23 @@ Design: `vscode-extension-design.md`. "The extension" is the VS Code extension. 
 ## Commands and the engine
 
 - [x] **EXT-CMD-001**: The extension shall provide a Start review command that lets the reviewer choose the current branch against a base, the working tree against a base, or a pull request number.
-- [x] **EXT-CMD-008**: The Start review command shall let the reviewer enter an optional statement of what the change does and why, and choose an optional agent plan or transcript file, and pass both to the engine's `run`.
+- [x] **EXT-CMD-008**: The Start review command shall let the reviewer enter an optional statement of what the change does and why, and attach an optional plan or transcript file explaining why the change was made, and pass both to the engine's `run`.
 - [x] **EXT-CMD-009**: When the reviewer starts a working-tree review, the extension shall show the statement entry before starting the engine.
+- [x] **EXT-CMD-010**: The Start review command shall offer the attachment with the prompt "Attach a plan or transcript explaining why this change was made? (optional)" and the choices "No, skip" and "Choose a plan or transcript file… (e.g. a Claude Code session)".
 - [x] **EXT-CMD-002**: When the reviewer starts a review, the extension shall run the engine's `run` operation as a background child process.
 - [x] **EXT-CMD-003**: The extension shall provide an Open review command that lists existing runs in the workspace.
 - [x] **EXT-CMD-004**: When a file in the open run's directory changes, the extension shall re-read it through the artifact store and refresh the views that use it.
 - [x] **EXT-CMD-005**: If the engine process exits with an error, then the extension shall show the error and the stage states from `run.json`.
+- [x] **EXT-CMD-011**: When the engine process started by Start review exits without error, the Start review command shall complete without failing and without showing an error or warning.
 - [x] **EXT-CMD-006**: The extension shall never read `recommendations.json` directly; it shall obtain recommendations only from the review session.
 - [x] **EXT-CMD-007**: When the reviewer opens a run whose engine process is still running, the extension shall show the run's current state and keep refreshing as files change.
+
+## Progress and logs
+
+- [x] **EXT-LOG-001**: The extension shall provide a "Duet" output channel and append to it each line the engine writes to standard error as the line arrives, without bringing the channel to the front.
+- [x] **EXT-LOG-002**: The extension shall provide a Show log command that, for an open review whose engine this window started, shows the output channel, and otherwise opens the run's `engine.log`.
+- [x] **EXT-LOG-003**: While a review is open, the extension shall show a status bar item with the number of stages complete out of the total in `run.json` and the names of the running stages, and clicking it shall show the log.
+- [x] **EXT-LOG-004**: While an engine started by Start review is running, the extension shall show a VS Code progress notification with the number of stages complete out of the total in `run.json`.
 
 ## Views
 
@@ -28,6 +37,11 @@ Design: `vscode-extension-design.md`. "The extension" is the VS Code extension. 
 - [x] **EXT-VIEW-010**: The review panel's Briefing tab shall show the change's choices before the steps, each with the choice, the alternative, the trade-off, and the rationale labelled by its source, followed by the deck's settled decisions.
 - [x] **EXT-VIEW-011**: When a choice's rationale source is `inferred` or `none`, the review panel shall label it as inferred by Claude or as not found, never as the author's.
 - [x] **EXT-VIEW-012**: When `cards.json` has `fact_check` of `timed_out` or `failed`, or `proposed_status` of `failed`, the review panel's Decisions tab shall say so above the cards.
+- [x] **EXT-VIEW-013**: The review panel's stage strip shall show a progress bar whose width is the percentage of stages complete in `run.json`, and a Show log control that shows the log.
+- [x] **EXT-VIEW-014**: When the extension refreshes comment threads, it shall dispose every thread it created earlier, including threads created by a refresh that failed partway, so the number of threads never grows across refreshes.
+- [x] **EXT-VIEW-015**: The extension shall show one comment thread per distinct file, line range, and text, so each card or finding anchor has exactly one thread.
+- [x] **EXT-VIEW-016**: When the review panel refreshes, it shall keep the active tab, the scroll position within each tab, and, on cards not yet committed, the chosen option and any rationale or question typed but not sent.
+- [x] **EXT-VIEW-017**: When a refresh would render the review panel unchanged, the extension shall leave the panel as it is.
 
 ## Cards
 

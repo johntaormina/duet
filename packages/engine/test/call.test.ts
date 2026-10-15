@@ -127,3 +127,33 @@ describe("scheduler", () => {
     expect(order[0]).toBe("h1");
   });
 });
+
+describe("progress", () => {
+  // @spec PIPE-PROG-001, PIPE-PROG-002
+  it("reports when each call starts, with its model, and when it ends, with its duration", async () => {
+    const lines: string[] = [];
+    const { runner } = fakeClaude({ p: () => ({ ok: true }) });
+    await callJson(env(runner, { stage: "briefing", progress: (l: string) => lines.push(l) }), { prompt: "p", vars: { thing: "x" }, branch: "human" });
+    expect(lines).toEqual(["briefing: p: claude started (model sonnet)", expect.stringMatching(/^briefing: p: claude done in \d+s$/)]);
+    const same: string[] = [];
+    await callJson(env(runner, { stage: "p", progress: (l: string) => same.push(l) }), { prompt: "p", vars: { thing: "x" }, branch: "human" });
+    expect(same[0]).toBe("p: claude started (model sonnet)");
+  });
+
+  // @spec PIPE-PROG-002
+  it("reports a failed call with its duration and the CLI's error", async () => {
+    const lines: string[] = [];
+    const { runner } = fakeClaude({ p: () => { throw new Error("Claude CLI call p failed: boom"); } });
+    await expect(callJson(env(runner, { stage: "intent", progress: (l: string) => lines.push(l) }), { prompt: "p", vars: { thing: "x" }, branch: "human" })).rejects.toThrow(/boom/);
+    expect(lines[1]).toMatch(/^intent: p: claude failed after \d+s: Claude CLI call p failed: boom$/);
+  });
+
+  // @spec PIPE-PROG-003
+  it("reports a rate-limit wait and when it will retry", async () => {
+    const lines: string[] = [];
+    const { runner } = fakeClaude({ p: (_r, n) => { if (n === 1) throw new RateLimitError("rate limit"); return { ok: true }; } });
+    await callJson(env(runner, { stage: "cards", progress: (l: string) => lines.push(l), now: () => new Date("2026-01-01T12:00:00Z") }), { prompt: "p", vars: { thing: "x" }, branch: "human" });
+    expect(lines).toContain("cards: p: rate limited; retrying at 12:00:15 UTC");
+  });
+});
+

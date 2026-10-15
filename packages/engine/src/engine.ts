@@ -61,6 +61,8 @@ export interface RunOptions extends EngineDeps {
   flags?: Partial<DuetConfig>;
   /** Called as soon as the run exists, before any stage runs. */
   onRun?: (runId: string, runDir: string) => void;
+  /** Receives each progress line (prefixed `duet: `) as it is also appended to the run's `engine.log`. */
+  onProgress?: (line: string) => void;
 }
 
 export interface RunSummary {
@@ -133,7 +135,7 @@ const fileHash = (data: unknown) => sha256(canonicalJson(data));
  * Reviews a change: creates or resumes its run, reuses every stage whose cache key still matches,
  * and runs the rest as two concurrent branches.
  */
-// @spec PIPE-CLI-001, PIPE-CLI-002, PIPE-CLI-005, PIPE-STG-001, PIPE-FAIL-001, PIPE-FAIL-002, PIPE-FAIL-003, PIPE-FAIL-004, PIPE-RES-004
+// @spec PIPE-CLI-001, PIPE-CLI-002, PIPE-CLI-005, PIPE-STG-001, PIPE-FAIL-001, PIPE-FAIL-002, PIPE-FAIL-003, PIPE-FAIL-004, PIPE-RES-004, PIPE-PROG-004, PIPE-PROG-005
 export async function run(opts: RunOptions): Promise<RunSummary> {
   const s = await setup(opts.repoRoot, opts, opts.flags);
   const change = await resolveChange(s, opts, opts.repoRoot, opts.change);
@@ -144,6 +146,12 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
     if (change.worktree) s.store.keepSnapshot(runId, change.head);
     pipeline.initRun({ base: change.base, head: change.head, title: change.title });
     opts.onRun?.(runId, pipeline.dir);
+    const progress = (msg: string) => {
+      const line = `duet: ${msg}`;
+      pipeline.appendLog(`${new Date().toISOString()} ${line}`);
+      opts.onProgress?.(line);
+    };
+    const since = (iso: string) => Math.round((Date.now() - Date.parse(iso)) / 1000);
     const worktree = ensureHeadWorktree(opts.repoRoot, pipeline.dir, change.head);
     const reader = () => s.store.reader(runId);
     const scheduler = new Scheduler(s.config.concurrency);
@@ -155,6 +163,8 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
       cwd: worktree,
       sleep: opts.sleep,
       onWait: (detail) => pipeline.setStage(stage, { detail: detail ?? undefined }),
+      stage,
+      progress,
     });
     const promptFiles = (names: string[], extra: string[] = []) =>
       Object.fromEntries([...names.map((n) => [`prompts/${n}.md`, s.assets.read(`prompts/${n}.md`)]), ...extra.map((r) => [r, s.assets.read(r)])]);
@@ -162,21 +172,31 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
     const agentPlan = opts.agentPlanFile ? readFileSync(opts.agentPlanFile, "utf8") : undefined;
 
     const stage = async <T>(name: Stage, key: string, produce: () => Promise<T>, file: keyof PipelineFiles, writeOutput = true): Promise<T> => {
-      if (reader().isReusable(name, key)) return reader().read(file) as T;
-      pipeline.setStage(name, { status: "running", started_at: new Date().toISOString(), finished_at: null, cache_key: key, detail: undefined });
+      if (reader().isReusable(name, key)) {
+        progress(`${name}: reused`);
+        return reader().read(file) as T;
+      }
+      const started = new Date().toISOString();
+      pipeline.setStage(name, { status: "running", started_at: started, finished_at: null, cache_key: key, detail: undefined });
+      progress(`${name}: running`);
       try {
         const out = await produce();
         if (writeOutput) pipeline.write(file, out);
         pipeline.setStage(name, { status: "complete", finished_at: new Date().toISOString(), detail: undefined });
+        progress(`${name}: complete in ${since(started)}s`);
         return out;
       } catch (e) {
         const current = reader().read("run")?.stages[name];
         if (current?.status !== "failed") pipeline.setStage(name, { status: "failed", error: (e as Error).message, finished_at: new Date().toISOString(), detail: undefined });
+        progress(`${name}: failed: ${reader().read("run")?.stages[name].error ?? (e as Error).message}`);
         throw e;
       }
     };
     const failDownstream = (from: Stage, stages: Stage[]) => {
-      for (const st of stages) pipeline.setStage(st, { status: "failed", error: `upstream stage ${from} failed`, finished_at: new Date().toISOString(), detail: undefined });
+      for (const st of stages) {
+        pipeline.setStage(st, { status: "failed", error: `upstream stage ${from} failed`, finished_at: new Date().toISOString(), detail: undefined });
+        progress(`${st}: failed: upstream stage ${from} failed`);
+      }
     };
 
     // Context, shared by both branches.
@@ -247,16 +267,23 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
       // is only worth it when a completed result might be reusable; otherwise specialists start now.
       const keyFor = (cards: Cards | null) =>
         computeCacheKey({ inputs: { files }, upstream: { context: fileHash(pack), cards: cards ? fileHash(cards) : "none" }, files: promptFiles(specialistNames), config: { ...stageConfig(specialistNames), threshold: s.config.confidenceThreshold }, schemaVersion: SCHEMA_VERSION });
-      if (reader().read("run")?.stages.findings.status === "complete" && reader().isReusable("findings", keyFor(await cardsDone))) return;
-      pipeline.setStage("findings", { status: "running", started_at: new Date().toISOString(), finished_at: null, cache_key: null, detail: undefined });
+      if (reader().read("run")?.stages.findings.status === "complete" && reader().isReusable("findings", keyFor(await cardsDone))) {
+        progress("findings: reused");
+        return;
+      }
+      const started = new Date().toISOString();
+      pipeline.setStage("findings", { status: "running", started_at: started, finished_at: null, cache_key: null, detail: undefined });
+      progress("findings: running");
       try {
         const findings = await runMachine({ env: env("findings"), pack, cardsDone, files, head: change.head });
         pipeline.write("findings", findings);
         pipeline.setStage("findings", { status: "complete", finished_at: new Date().toISOString(), cache_key: keyFor(await cardsDone), detail: undefined });
+        progress(`findings: complete in ${since(started)}s`);
       } catch (e) {
         if (reader().read("run")?.stages.findings.status !== "failed") {
           pipeline.setStage("findings", { status: "failed", error: (e as Error).message, finished_at: new Date().toISOString(), detail: undefined });
         }
+        progress(`findings: failed: ${reader().read("run")?.stages.findings.error ?? (e as Error).message}`);
       }
     })();
 
